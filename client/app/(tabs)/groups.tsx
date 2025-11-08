@@ -141,13 +141,16 @@ export default function Teams() {
 
     try {
       const token = await AsyncStorage.getItem("authToken");
+      
+      const canSearchAllUsers = ["CEO", "Project Manager"].includes(user?.role || "");
+      
       const response = await axios.get(`http://${IP}:5555/users/search`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
         params: {
           query,
-          department: user?.department,
+          ...(canSearchAllUsers ? {} : { department: user?.department }),
         },
       });
       const filtered = response.data.filter(
