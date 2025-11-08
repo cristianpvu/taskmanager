@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import axios from "axios";
 import { IP } from "@/data/ip";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import GroupDetail from "../components/GroupDetail";
 
 const COLORS = {
   primary: "#2563EB",
@@ -46,6 +47,7 @@ export default function Teams() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<User[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
 
   useEffect(() => {
     loadGroups();
@@ -62,7 +64,11 @@ export default function Teams() {
           department: user?.department,
         },
       });
-      setGroups(response.data);
+      const userGroups = response.data.filter((group: Group) =>
+        group.members.some((member) => member._id === user?._id)
+      );
+      
+      setGroups(userGroups);
     } catch (error) {
       console.error("Error loading groups:", error);
       Alert.alert("Error", "Failed to load teams");
@@ -94,7 +100,6 @@ export default function Teams() {
           department: user?.department,
         },
       });
-      // Filter out already selected members and current user
       const filtered = response.data.filter(
         (u: User) => u._id !== user?._id && !selectedMembers.find((m) => m._id === u._id)
       );
@@ -192,7 +197,7 @@ export default function Teams() {
             </View>
           ) : (
             groups.map((group) => (
-              <TouchableOpacity key={group._id} style={styles.teamCard}>
+              <TouchableOpacity key={group._id} style={styles.teamCard} onPress={() => setSelectedGroup(group._id)}>
                 <View style={styles.teamIcon}>
                   <Ionicons name="people" size={24} color={COLORS.primary} />
                 </View>
@@ -331,6 +336,18 @@ export default function Teams() {
             </View>
           </View>
         </View>
+      </Modal>
+      <Modal
+        visible={!!selectedGroup}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        {selectedGroup && (
+          <GroupDetail 
+            groupId={selectedGroup} 
+            onClose={() => setSelectedGroup(null)} 
+          />
+        )}
       </Modal>
     </View>
   );
