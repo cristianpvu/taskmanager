@@ -254,7 +254,6 @@ export default function UserProfile() {
                                 {user.firstName} {user.lastName}
                             </Text>
                             <View style={styles.roleContainer}>
-                                <Ionicons name={getRoleIcon(user.role)} size={14} color={COLORS.white} />
                                 <Text style={styles.userRole}>{user.role}</Text>
                             </View>
                             <View style={styles.departmentBadge}>

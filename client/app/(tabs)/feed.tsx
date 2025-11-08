@@ -339,7 +339,18 @@ export default function Feed() {
           } catch (encError: any) {
             console.error("❌ Encryption error:", encError);
             console.error("Error details:", encError.response?.data || encError.message);
-            // If encryption fails, continue without encryption
+            
+            // Check if it's a missing encryption key error
+            if (encError.response?.status === 403 || encError.response?.status === 404) {
+              Alert.alert(
+                "Encryption Key Missing",
+                encError.response?.data?.message || "One or more selected teams don't have encryption keys set up. Please contact an administrator.",
+                [{ text: "OK" }]
+              );
+              setLoading(false);
+              return; // Stop task creation
+            }
+            // If encryption fails for other reasons, continue without encryption
           }
         } else {
           console.log('⚠️ No groups selected, skipping encryption');
@@ -360,7 +371,24 @@ export default function Feed() {
       loadTasks(); // Reload tasks after creation
     } catch (error: any) {
       console.error("Error creating task:", error);
-      Alert.alert("Error", error.response?.data?.message || "Failed to create task");
+      
+      // HANDLE THE MISSING ENCRYPTION KEY ERROR ⬇️
+      if (error.response?.data?.missingKeys) {
+        Alert.alert(
+          "Encryption Keys Missing",
+          error.response.data.message,
+          [
+            { 
+              text: "Contact Admin", 
+              onPress: () => {
+              }
+            },
+            { text: "OK", style: "cancel" }
+          ]
+        );
+      } else {
+        Alert.alert("Error", error.response?.data?.message || "Failed to create task");
+      }
     } finally {
       setLoading(false);
     }

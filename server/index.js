@@ -672,14 +672,28 @@ app.post("/task/create", verifyToken, async (req, res) => {
       tags,
       checklist
     } = req.body;
+
+    if (assignedGroups && assignedGroups.length > 0 && (titleEncrypted || descriptionEncrypted)) {
+      const groups = await Group.find({ _id: { $in: assignedGroups } });
+      
+      const groupsWithoutKeys = groups.filter(group => !group.encryptionKey);
+      
+      if (groupsWithoutKeys.length > 0) {
+        const groupNames = groupsWithoutKeys.map(g => g.name).join(", ");
+        return res.status(400).json({ 
+          message: `The following team(s) do not have encryption keys set up: ${groupNames}. Please contact an administrator to set up encryption for these teams.`,
+          missingKeys: true,
+          groups: groupsWithoutKeys.map(g => ({ id: g._id, name: g.name }))
+        });
+      }
+    }
+
     let progressPercentage = 0;
     if (checklist && checklist.length > 0) {
       const completedCount = checklist.filter(item => item.isCompleted).length;
       progressPercentage = Math.round((completedCount / checklist.length) * 100);
     }
 
-    // If encrypted data exists, don't store plain text in database
-    // Plain text is only sent for CEO/Admin viewing, not for storage
     const shouldEncrypt = titleEncrypted && descriptionEncrypted;
     
     const task = await Task.create({
@@ -859,23 +873,18 @@ app.get("/task/:id", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Task not found" });
     }
 
-    // Check if user is CEO/Admin - they decrypt on server
     const user = await User.findById(req.userId);
     const isCEO = user.role === "CEO" || user.role === "Admin";
 
-    // Convert to plain object to modify
     const taskObject = task.toObject();
 
     if (taskObject.titleEncrypted && taskObject.descriptionEncrypted) {
       if (isCEO) {
-        // CEO/Admin: Decrypt on server and show plain text
         try {
           const group = await Group.findById(taskObject.encryptedForGroups[0]);
           if (group && group.encryptionKey) {
-            // Decrypt using group key
             const keyBuffer = Buffer.from(group.encryptionKey, 'base64');
             
-            // Decrypt title
             const [titleIV, titleEncrypted] = taskObject.titleEncrypted.split(':');
             const titleDecipher = crypto.createDecipheriv(
               'aes-256-cbc',
@@ -885,7 +894,6 @@ app.get("/task/:id", verifyToken, async (req, res) => {
             taskObject.title = titleDecipher.update(titleEncrypted, 'base64', 'utf8') + 
                               titleDecipher.final('utf8');
             
-            // Decrypt description
             const [descIV, descEncrypted] = taskObject.descriptionEncrypted.split(':');
             const descDecipher = crypto.createDecipheriv(
               'aes-256-cbc',
@@ -901,7 +909,6 @@ app.get("/task/:id", verifyToken, async (req, res) => {
           taskObject.description = '[Decryption Error]';
         }
       } else {
-        // Regular users: Remove plain text, keep encrypted for client-side decryption
         taskObject.title = null;
         taskObject.description = null;
       }
