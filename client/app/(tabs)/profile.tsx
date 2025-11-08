@@ -85,13 +85,11 @@ export default function Profile() {
         try {
             const token = await AsyncStorage.getItem("authToken");
 
-            // Fetch stats
             const statsResponse = await axios.get(`http://${IP}:5555/user/${user?._id}/stats`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             setStats(statsResponse.data);
 
-            // Fetch all user tasks
             const allTasksResponse = await axios.get(
                 `http://${IP}:5555/tasks/user/${user?._id}`,
                 {
@@ -100,11 +98,9 @@ export default function Profile() {
             );
             setAllTasks(allTasksResponse.data);
 
-            // Filter completed tasks
             const completed = allTasksResponse.data.filter((task: Task) => task.status === "Completed");
             setCompletedTasks(completed);
 
-            // Filter claimed tasks (for contribution graph)
             const claimed = allTasksResponse.data.filter((task: Task) => task.claimedAt);
             setClaimedTasks(claimed);
 
@@ -142,7 +138,6 @@ export default function Profile() {
                 }
             );
 
-            // Update user in AuthContext using login function
             if (token && response.data.user) {
                 await login(token, response.data.user);
             }
@@ -202,16 +197,13 @@ export default function Profile() {
                 date.setDate(date.getDate() - (weekIndex * 7 + (6 - dayIndex)));
                 date.setHours(0, 0, 0, 0);
 
-                // Count tasks completed OR claimed on this date
                 const tasksOnDate = allTasks.filter((task) => {
-                    // Check completed date
                     if (task.completedDate) {
                         const completedDate = new Date(task.completedDate);
                         completedDate.setHours(0, 0, 0, 0);
                         if (completedDate.getTime() === date.getTime()) return true;
                     }
 
-                    // Check claimed date
                     if (task.claimedAt) {
                         const claimedDate = new Date(task.claimedAt);
                         claimedDate.setHours(0, 0, 0, 0);
@@ -247,7 +239,6 @@ export default function Profile() {
     };
 
     const getTotalContributions = () => {
-        // Count unique dates where tasks were completed or claimed
         const uniqueDates = new Set();
 
         allTasks.forEach(task => {

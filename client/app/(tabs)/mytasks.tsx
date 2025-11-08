@@ -85,7 +85,6 @@ export default function MyTasks() {
       const response = await axios.get(`http://${IP}:5555/tasks/user/${user?._id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      // Initialize checklist for old tasks that don't have it
       const tasksData = response.data.map((task: Task) => ({
         ...task,
         checklist: task.checklist || [],
@@ -133,7 +132,6 @@ export default function MyTasks() {
 
   return (
     <View style={styles.container}>
-      {/* Filter Tabs */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer}>
         <TouchableOpacity
           style={[styles.filterButton, filter === "all" && styles.filterButtonActive]}
@@ -181,7 +179,6 @@ export default function MyTasks() {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Tasks List */}
       <ScrollView
         style={styles.content}
         contentContainerStyle={loading || filteredTasks.length === 0 ? styles.contentCenter : undefined}
@@ -219,7 +216,6 @@ export default function MyTasks() {
                 }}
                 activeOpacity={0.7}
               >
-                {/* Task Header */}
                 <View style={styles.taskHeader}>
                   <View style={styles.taskHeaderLeft}>
                     <View
@@ -245,13 +241,11 @@ export default function MyTasks() {
                   <Text style={styles.taskDueDate}>{formatDate(task.dueDate)}</Text>
                 </View>
 
-                {/* Task Title & Description */}
                 <Text style={styles.taskTitle}>{task.title}</Text>
                 <Text style={styles.taskDescription} numberOfLines={2}>
                   {task.description}
                 </Text>
 
-                {/* Tags */}
                 {task.tags.length > 0 && (
                   <View style={styles.tagsContainer}>
                     {task.tags.slice(0, 3).map((tag, index) => (
@@ -265,7 +259,6 @@ export default function MyTasks() {
                   </View>
                 )}
 
-                {/* Task Footer */}
                 <View style={styles.taskFooter}>
                   <View style={styles.taskCreator}>
                     <View style={styles.creatorAvatar}>
