@@ -42,6 +42,9 @@ const PRIORITY_COLORS = {
   Urgent: "#EF4444",
 };
 
+// Roles that can create tasks
+const AUTHORIZED_ROLES = ["CEO", "Project Manager", "Team Lead"];
+
 interface User {
   _id: string;
   firstName: string;
@@ -82,6 +85,26 @@ interface Task {
   checklist?: any[];
 }
 
+const ROLE_HIERARCHY: { [key: string]: string[] } = {
+  "CEO": ["Project Manager", "Team Lead", "Employee", "Intern", "Contractor"],
+  "Project Manager": ["Team Lead", "Employee", "Intern", "Contractor"],
+  "Team Lead": ["Employee", "Intern", "Contractor"],
+  "Employee": [],
+  "Intern": [],
+  "Contractor": []
+};
+
+const SUBTASK_MANAGER_ROLES = ["CEO", "Project Manager", "Team Lead"];
+
+const canAssignToRole = (userRole: string, targetRole: string): boolean => {
+  return ROLE_HIERARCHY[userRole]?.includes(targetRole) || false;
+};
+
+const filterAssignableUsers = (users: User[], currentUserRole: string): User[] => {
+  const assignableRoles = ROLE_HIERARCHY[currentUserRole] || [];
+  return users.filter(user => assignableRoles.includes(user.role));
+};
+
 export default function Feed() {
   const { user } = useAuth();
   const router = useRouter();
@@ -114,6 +137,9 @@ export default function Feed() {
   const [groupSearchResults, setGroupSearchResults] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Check if user can create tasks
+  const canCreateTasks = AUTHORIZED_ROLES.includes(user?.role || "");
+
   useEffect(() => {
     loadTasks();
   }, []);
@@ -144,6 +170,10 @@ export default function Feed() {
   };
 
   const handleAddTask = () => {
+    if (!canCreateTasks) {
+      Alert.alert("Permission Denied", "Only CEO, Project Manager, and Team Lead can create tasks.");
+      return;
+    }
     setShowCreateModal(true);
   };
 
@@ -159,8 +189,12 @@ export default function Feed() {
         headers: { Authorization: `Bearer ${token}` },
         params: { query, department: user?.department },
       });
+      
+      // Filter users based on role hierarchy
       const filtered = response.data.filter(
-        (u: User) => u._id !== user?._id && !selectedUsers.find((m) => m._id === u._id)
+        (u: User) => u._id !== user?._id && 
+                    !selectedUsers.find((m) => m._id === u._id) &&
+                    canAssignToRole(user?.role || "", u.role)
       );
       setUserSearchResults(filtered);
     } catch (error) {
@@ -382,7 +416,11 @@ export default function Feed() {
           <View style={styles.emptyState}>
             <Ionicons name="newspaper-outline" size={64} color={COLORS.textLight} />
             <Text style={styles.emptyText}>No tasks available</Text>
-            <Text style={styles.emptySubtext}>Create a new task to get started</Text>
+            <Text style={styles.emptySubtext}>
+              {canCreateTasks 
+                ? "Create a new task to get started" 
+                : "Tasks will appear here when available"}
+            </Text>
           </View>
         ) : (
           <View style={styles.tasksContainer}>
@@ -472,9 +510,12 @@ export default function Feed() {
         )}
       </ScrollView>
 
-      <TouchableOpacity style={styles.fab} onPress={handleAddTask}>
-        <Ionicons name="add" size={28} color={COLORS.white} />
-      </TouchableOpacity>
+      {/* Only show FAB for authorized roles */}
+      {canCreateTasks && (
+        <TouchableOpacity style={styles.fab} onPress={handleAddTask}>
+          <Ionicons name="add" size={28} color={COLORS.white} />
+        </TouchableOpacity>
+      )}
 
       <Modal visible={showCreateModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>

@@ -15,6 +15,9 @@ const COLORS = {
     border: "#E2E8F0",
 };
 
+// Roles that can access the Messages/Admin Dashboard
+const ADMIN_ROLES = ['CEO', 'Project Manager', 'Team Lead'];
+
 export default function TabsLayout() {
     const pathname = usePathname();
     const router = useRouter();
@@ -23,6 +26,9 @@ export default function TabsLayout() {
     const [showNotifications, setShowNotifications] = useState(false);
 
     const isActive = (path: string) => pathname === path;
+
+    // Check if user has admin access
+    const hasAdminAccess = user && ADMIN_ROLES.includes(user.role);
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -117,18 +123,21 @@ export default function TabsLayout() {
                     <Text style={[styles.navText, isActive("/mytasks") && styles.navTextActive]}>My Tasks</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                    style={styles.navItem}
-                    onPress={() => router.push("/messages" as any)}
-                    activeOpacity={0.7}
-                >
-                    <Ionicons
-                        name={isActive("/messages") ? "chatbubbles" : "chatbubbles-outline"}
-                        size={24}
-                        color={isActive("/messages") ? COLORS.primary : COLORS.textLight}
-                    />
-                    <Text style={[styles.navText, isActive("/messages") && styles.navTextActive]}>Messages</Text>
-                </TouchableOpacity>
+                {/* Only show Messages tab for admin roles */}
+                {hasAdminAccess && (
+                    <TouchableOpacity
+                        style={styles.navItem}
+                        onPress={() => router.push("/messages" as any)}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons
+                            name={isActive("/messages") ? "chatbubbles" : "chatbubbles-outline"}
+                            size={24}
+                            color={isActive("/messages") ? COLORS.primary : COLORS.textLight}
+                        />
+                        <Text style={[styles.navText, isActive("/messages") && styles.navTextActive]}>Dashboard</Text>
+                    </TouchableOpacity>
+                )}
 
                 <TouchableOpacity
                     style={styles.navItem}
