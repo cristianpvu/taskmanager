@@ -123,7 +123,7 @@ export default function TabsLayout() {
                     <Text style={[styles.navText, isActive("/mytasks") && styles.navTextActive]}>My Tasks</Text>
                 </TouchableOpacity>
 
-                {/* Only show Messages tab for admin roles */}
+                {/* Only show Dashboard tab for admin roles */}
                 {hasAdminAccess && (
                     <TouchableOpacity
                         style={styles.navItem}
@@ -131,7 +131,7 @@ export default function TabsLayout() {
                         activeOpacity={0.7}
                     >
                         <Ionicons
-                            name={isActive("/messages") ? "chatbubbles" : "chatbubbles-outline"}
+                            name={isActive("/messages") ? "grid" : "grid-outline"}
                             size={24}
                             color={isActive("/messages") ? COLORS.primary : COLORS.textLight}
                         />
