@@ -18,6 +18,7 @@ import { useAuth } from "@/context/AuthContext";
 import axios from "axios";
 import { IP } from "@/data/ip";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter } from "expo-router";
 
 const COLORS = {
   primary: "#2563EB",
@@ -81,14 +82,13 @@ interface Task {
 
 export default function Feed() {
   const { user } = useAuth();
+  const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
   
-  // Feed tasks
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
-  // Task fields
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("Medium");
@@ -101,12 +101,10 @@ export default function Feed() {
   const [tags, setTags] = useState("");
   const [color, setColor] = useState("#3B82F6");
   
-  // Assignment
   const [assignmentType, setAssignmentType] = useState<AssignmentType>("open");
   const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
   const [selectedGroups, setSelectedGroups] = useState<Group[]>([]);
   
-  // Search
   const [userSearchQuery, setUserSearchQuery] = useState("");
   const [userSearchResults, setUserSearchResults] = useState<User[]>([]);
   const [groupSearchResults, setGroupSearchResults] = useState<Group[]>([]);
@@ -330,7 +328,18 @@ export default function Feed() {
         ) : (
           <View style={styles.tasksContainer}>
             {tasks.map((task) => (
-              <View key={task._id} style={[styles.taskCard, { borderLeftColor: task.color }]}>
+              <TouchableOpacity 
+                key={task._id} 
+                style={[styles.taskCard, { borderLeftColor: task.color }]}
+                onPress={() => {
+                  console.log("Navigating to task:", task._id);
+                  router.push({
+                    pathname: "/taskdetails",
+                    params: { id: task._id }
+                  } as any);
+                }}
+                activeOpacity={0.7}
+              >
                 {/* Task Header */}
                 <View style={styles.taskHeader}>
                   <View style={styles.taskHeaderLeft}>
@@ -372,7 +381,6 @@ export default function Feed() {
                   </View>
                 )}
 
-                {/* Task Footer */}
                 <View style={styles.taskFooter}>
                   <View style={styles.taskCreator}>
                     <View style={styles.creatorAvatar}>
@@ -389,32 +397,32 @@ export default function Feed() {
                   {task.isOpenForClaims && !task.isClaimed && (
                     <TouchableOpacity
                       style={styles.claimButton}
-                      onPress={() => handleClaimTask(task._id)}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleClaimTask(task._id);
+                      }}
                     >
                       <Ionicons name="hand-right" size={16} color={COLORS.white} />
                       <Text style={styles.claimButtonText}>Claim</Text>
                     </TouchableOpacity>
                   )}
                 </View>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}
       </ScrollView>
 
-      {/* Floating Action Button */}
       <TouchableOpacity style={styles.fab} onPress={handleAddTask}>
         <Ionicons name="add" size={28} color={COLORS.white} />
       </TouchableOpacity>
 
-      {/* Create Task Modal */}
       <Modal visible={showCreateModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalTitle}>Create New Task</Text>
 
-              {/* Title */}
               <Text style={styles.label}>Title *</Text>
               <TextInput
                 style={styles.input}
@@ -424,7 +432,6 @@ export default function Feed() {
                 placeholderTextColor={COLORS.textLight}
               />
 
-              {/* Description */}
               <Text style={styles.label}>Description *</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
@@ -436,7 +443,6 @@ export default function Feed() {
                 numberOfLines={4}
               />
 
-              {/* Priority */}
               <Text style={styles.label}>Priority</Text>
               <View style={styles.priorityContainer}>
                 {PRIORITIES.map((p) => (
@@ -460,7 +466,6 @@ export default function Feed() {
                 ))}
               </View>
 
-              {/* Dates */}
               <Text style={styles.label}>Start Date & Time</Text>
               <TouchableOpacity
                 style={styles.dateButton}
@@ -649,7 +654,6 @@ export default function Feed() {
                 </View>
               )}
 
-              {/* Individuals Selection */}
               {assignmentType === "individuals" && (
                 <View style={styles.selectionContainer}>
                   <Text style={styles.label}>Search and Add Users</Text>
@@ -664,7 +668,6 @@ export default function Feed() {
                     placeholderTextColor={COLORS.textLight}
                   />
 
-                  {/* Search Results */}
                   {userSearchResults.length > 0 && (
                     <View style={styles.searchResults}>
                       <ScrollView style={styles.searchResultsList} nestedScrollEnabled>
@@ -693,7 +696,6 @@ export default function Feed() {
                     </View>
                   )}
 
-                  {/* Selected Users */}
                   {selectedUsers.length > 0 && (
                     <View style={styles.selectedMembers}>
                       <Text style={styles.selectedLabel}>
