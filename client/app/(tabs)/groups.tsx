@@ -42,6 +42,7 @@ export default function Teams() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const [groups, setGroups] = useState<Group[]>([]);
+  const [departmentGroup, setDepartmentGroup] = useState<Group | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -54,11 +55,14 @@ export default function Teams() {
 
   useEffect(() => {
     loadGroups();
+    loadDepartmentGroup();
   }, []);
 
+  // Handle return from task details
   useEffect(() => {
     if (params.returnToGroup && typeof params.returnToGroup === 'string') {
       setSelectedGroup(params.returnToGroup);
+      // Clear the param to prevent reopening on subsequent renders
       router.setParams({ returnToGroup: undefined });
     }
   }, [params.returnToGroup]);
@@ -88,9 +92,26 @@ export default function Teams() {
     }
   };
 
+  const loadDepartmentGroup = async () => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      const response = await axios.get(
+        `http://${IP}:5555/group/department/${user?.department}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      setDepartmentGroup(response.data);
+    } catch (error) {
+      console.error("Error loading department group:", error);
+      // Department group might not exist yet, this is okay
+    }
+  };
+
   const onRefresh = () => {
     setRefreshing(true);
     loadGroups();
+    loadDepartmentGroup();
   };
 
   const searchUsers = async (query: string) => {
@@ -177,16 +198,33 @@ export default function Teams() {
       >
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Department Team</Text>
-          <TouchableOpacity style={styles.teamCard}>
-            <View style={styles.teamIcon}>
-              <Ionicons name="business" size={24} color={COLORS.primary} />
-            </View>
-            <View style={styles.teamInfo}>
-              <Text style={styles.teamName}>{user?.department}</Text>
-              <Text style={styles.teamSubtext}>Department team • All members</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={COLORS.textLight} />
-          </TouchableOpacity>
+          {departmentGroup ? (
+            <TouchableOpacity 
+              style={styles.teamCard}
+              onPress={() => setSelectedGroup(departmentGroup._id)}
+            >
+              <View style={styles.teamIcon}>
+                <Ionicons name="business" size={24} color={COLORS.primary} />
+              </View>
+              <View style={styles.teamInfo}>
+                <Text style={styles.teamName}>{user?.department}</Text>
+                <Text style={styles.teamSubtext}>
+                  Department team • {departmentGroup.members.length} {departmentGroup.members.length === 1 ? "member" : "members"}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={COLORS.textLight} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.teamCard} disabled>
+              <View style={styles.teamIcon}>
+                <Ionicons name="business" size={24} color={COLORS.textLight} />
+              </View>
+              <View style={styles.teamInfo}>
+                <Text style={styles.teamName}>{user?.department}</Text>
+                <Text style={styles.teamSubtext}>Loading department team...</Text>
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -256,6 +294,7 @@ export default function Teams() {
               numberOfLines={3}
             />
 
+            {/* Add Members Section */}
             <Text style={styles.sectionLabel}>Add Members</Text>
             <TextInput
               style={styles.input}
@@ -268,6 +307,7 @@ export default function Teams() {
               placeholderTextColor={COLORS.textLight}
             />
 
+            {/* Search Results */}
             {searchResults.length > 0 && (
               <View style={styles.searchResults}>
                 <ScrollView style={styles.searchResultsList} nestedScrollEnabled>
@@ -296,11 +336,10 @@ export default function Teams() {
               </View>
             )}
 
+            {/* Selected Members */}
             {selectedMembers.length > 0 && (
               <View style={styles.selectedMembers}>
-                <Text style={styles.selectedLabel}>
-                  Selected Members ({selectedMembers.length})
-                </Text>
+                <Text style={styles.selectedLabel}>Selected Members ({selectedMembers.length})</Text>
                 {selectedMembers.map((member) => (
                   <View key={member._id} style={styles.selectedMemberItem}>
                     <View style={styles.userAvatar}>

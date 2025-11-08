@@ -33,7 +33,6 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } 
 });
 
-// Helper function to log activity
 const logActivity = async (taskId, userId, type, description, metadata = {}) => {
   try {
     const task = await Task.findById(taskId);
@@ -66,21 +65,58 @@ const uploadToCloudinary = (buffer, folder) => {
   });
 };
 
-// Helper function to calculate task progress including subtasks
+const findOrCreateDepartmentGroup = async (department, userId) => {
+  try {
+    let departmentGroup = await Group.findOne({
+      name: department,
+      department: department,
+      isDepartmentGroup: true
+    });
+
+    if (!departmentGroup) {
+      departmentGroup = await Group.create({
+        name: department,
+        description: `Official ${department} department group`,
+        department: department,
+        members: [userId],
+        leader: userId, 
+        createdBy: userId,
+        isDepartmentGroup: true,
+        isActive: true
+      });
+
+      console.log(`Created new department group for ${department}`);
+    } else {
+      if (!departmentGroup.members.includes(userId)) {
+        departmentGroup.members.push(userId);
+        await departmentGroup.save();
+        console.log(`Added user to existing ${department} group`);
+      }
+    }
+
+    await User.findByIdAndUpdate(userId, {
+      $addToSet: { groups: departmentGroup._id }
+    });
+
+    return departmentGroup._id;
+  } catch (error) {
+    console.error("Error in findOrCreateDepartmentGroup:", error);
+    throw error;
+  }
+};
+
 const calculateTaskProgress = async (task) => {
   let checklistProgress = 0;
   let subtaskProgress = 0;
   let hasChecklist = false;
   let hasSubtasks = false;
 
-  // Calculate checklist progress
   if (task.checklist && task.checklist.length > 0) {
     hasChecklist = true;
     const completedCount = task.checklist.filter(item => item.isCompleted).length;
     checklistProgress = Math.round((completedCount / task.checklist.length) * 100);
   }
 
-  // Calculate subtasks progress
   if (task.subtasks && task.subtasks.length > 0) {
     hasSubtasks = true;
     const subtasksData = await Task.find({ _id: { $in: task.subtasks } });
@@ -90,23 +126,18 @@ const calculateTaskProgress = async (task) => {
     }
   }
 
-  // If both exist, calculate weighted average (50% each)
   if (hasChecklist && hasSubtasks) {
     return Math.round((checklistProgress * 0.5) + (subtaskProgress * 0.5));
   }
-  // If only checklist exists
   else if (hasChecklist) {
     return checklistProgress;
   }
-  // If only subtasks exist
   else if (hasSubtasks) {
     return subtaskProgress;
   }
-  // If neither exists
   return 0;
 };
 
-// Helper function to update parent task progress when subtask changes
 const updateParentTaskProgress = async (taskId) => {
   const task = await Task.findById(taskId);
   if (task && task.parentTask) {
@@ -114,7 +145,6 @@ const updateParentTaskProgress = async (taskId) => {
     if (parentTask) {
       parentTask.progressPercentage = await calculateTaskProgress(parentTask);
       await parentTask.save();
-      // Recursively update if parent also has a parent
       if (parentTask.parentTask) {
         await updateParentTaskProgress(parentTask._id);
       }
@@ -190,6 +220,7 @@ app.post("/auth/register", async (req, res) => {
     if (existingUser) {
       return res.status(400).json({ message: "Email already in use" });
     }
+    
     const user = await User.create({
       email,
       password,
@@ -198,18 +229,49 @@ app.post("/auth/register", async (req, res) => {
       role,
       department
     });
+
+    try {
+      const departmentGroupId = await findOrCreateDepartmentGroup(department, user._id);
+      console.log(`User ${user.email} added to department group ${departmentGroupId}`);
+    } catch (groupError) {
+      console.error("Error adding user to department group:", groupError);
+    }
+
     const token = jwt.sign(
       { userId: user._id, email: user.email },
       process.env.JWT_SECRET,
       { expiresIn: "30d" }
     );
+    
     const userResponse = user.toObject();
     delete userResponse.password;
+    
     return res.status(201).json({
       message: "User registered successfully",
       token,
       user: userResponse
     });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/group/department/:department", verifyToken, async (req, res) => {
+  try {
+    const departmentGroup = await Group.findOne({
+      department: req.params.department,
+      isDepartmentGroup: true,
+      isActive: true
+    })
+      .populate("members", "firstName lastName profilePhoto role department")
+      .populate("leader", "firstName lastName profilePhoto role")
+      .populate("createdBy", "firstName lastName");
+
+    if (!departmentGroup) {
+      return res.status(404).json({ message: "Department group not found" });
+    }
+
+    return res.status(200).json(departmentGroup);
   } catch (error) {
     console.log(error.message);
     res.status(500).json({ message: error.message });
@@ -491,7 +553,6 @@ app.post("/task/create", verifyToken, async (req, res) => {
       tags,
       checklist
     } = req.body;
-    // Calculate initial progress percentage based on checklist
     let progressPercentage = 0;
     if (checklist && checklist.length > 0) {
       const completedCount = checklist.filter(item => item.isCompleted).length;
@@ -681,7 +742,6 @@ app.put("/task/:id", verifyToken, async (req, res) => {
       tags
     } = req.body;
     
-    // Get old task for comparison
     const oldTask = await Task.findById(req.params.id);
     
     const updateData = {};
@@ -700,7 +760,6 @@ app.put("/task/:id", verifyToken, async (req, res) => {
       }
     }
     
-    // Log changes
     const activities = [];
     
     if (status && status !== oldTask.status) {
@@ -1003,7 +1062,6 @@ app.put("/task/:id/assign-to-me", verifyToken, async (req, res) => {
   }
 });
 
-// Assign task to someone else when it has group assignment
 app.put("/task/:id/assign-user", verifyToken, async (req, res) => {
   try {
     const { userId } = req.body;
@@ -1527,7 +1585,6 @@ app.put("/task/:taskId/checklist/:itemId/toggle", verifyToken, async (req, res) 
     task.progressPercentage = await calculateTaskProgress(task);
     await task.save();
 
-    // Update parent task progress if this is a subtask
     await updateParentTaskProgress(task._id);
 
     return res.status(200).json({
@@ -1565,7 +1622,6 @@ app.delete("/task/:taskId/checklist/:itemId", verifyToken, async (req, res) => {
     task.progressPercentage = await calculateTaskProgress(task);
     await task.save();
 
-    // Update parent task progress if this is a subtask
     await updateParentTaskProgress(task._id);
 
     return res.status(200).json({
@@ -1591,7 +1647,6 @@ app.post("/comment/create", verifyToken, async (req, res) => {
       .populate("author", "firstName lastName profilePhoto role");
     const task = await Task.findById(taskId);
     
-    // Log comment activity
     await logActivity(
       taskId,
       req.userId,
@@ -1649,7 +1704,6 @@ app.get("/task/:id/activity-log", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Task not found" });
     }
     
-    // Sort by timestamp descending (newest first)
     const sortedLog = task.activityLog.sort((a, b) => 
       new Date(b.timestamp) - new Date(a.timestamp)
     );

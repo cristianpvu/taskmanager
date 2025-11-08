@@ -34,6 +34,10 @@ const groupSchema = mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    isDepartmentGroup: {
+        type: Boolean,
+        default: false,
+    }
   },
   {
     timestamps: true,
