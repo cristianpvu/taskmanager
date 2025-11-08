@@ -56,13 +56,15 @@ interface Task {
     status: string;
     title: string;
     updatedAt?: string;
+    claimedAt?: string;
 }
 
 export default function Profile() {
-    const { user, logout } = useAuth();
+    const { user, logout, login } = useAuth();
     const router = useRouter();
     const [stats, setStats] = useState<Stats | null>(null);
     const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
+    const [claimedTasks, setClaimedTasks] = useState<Task[]>([]);
     const [allTasks, setAllTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -100,8 +102,13 @@ export default function Profile() {
             const completed = allTasksResponse.data.filter((task: Task) => task.status === "Completed");
             setCompletedTasks(completed);
 
+            // Filter claimed tasks (for contribution graph)
+            const claimed = allTasksResponse.data.filter((task: Task) => task.claimedAt);
+            setClaimedTasks(claimed);
+
             console.log("All tasks loaded:", allTasksResponse.data.length);
             console.log("Completed tasks:", completed.length);
+            console.log("Claimed tasks:", claimed.length);
         } catch (error) {
             console.error("Error loading profile data:", error);
             Alert.alert("Error", "Failed to load profile data");
@@ -133,8 +140,11 @@ export default function Profile() {
                 }
             );
 
-            // Update local user state
-            setUser(response.data.user);
+            // Update user in AuthContext using login function
+            if (token && response.data.user) {
+                await login(token, response.data.user);
+            }
+
             Alert.alert("Success", "Profile updated successfully!");
             setShowEditModal(false);
             loadProfileData();
@@ -143,10 +153,6 @@ export default function Profile() {
             Alert.alert("Error", "Failed to update profile");
         }
     };
-
-    // Înlocuiește funcția handleLogout cu această versiune corectată:
-
-    // Înlocuiește funcția handleLogout cu această versiune corectată:
 
     const handleLogout = () => {
         Alert.alert(
@@ -163,18 +169,9 @@ export default function Profile() {
                     onPress: async () => {
                         try {
                             console.log("Starting logout process...");
-
-                            // Use the logout function from AuthContext
-                            // This will clear both authToken and user from AsyncStorage
                             await logout();
                             console.log("Logout completed");
-
-                            // Navigate to select-auth screen
-                            console.log("Attempting navigation...");
-
-                            // Use replace to prevent going back
                             router.replace("/selectauth");
-
                             console.log("Navigation completed");
                         } catch (error) {
                             console.error("Error during logout:", error);
@@ -185,7 +182,6 @@ export default function Profile() {
             ]
         );
     };
-
 
     const getInitials = () => {
         if (!user) return "??";
@@ -204,12 +200,23 @@ export default function Profile() {
                 date.setDate(date.getDate() - (weekIndex * 7 + (6 - dayIndex)));
                 date.setHours(0, 0, 0, 0);
 
-                // Count tasks completed on this date
-                const tasksOnDate = completedTasks.filter((task) => {
-                    if (!task.completedDate) return false;
-                    const taskDate = new Date(task.completedDate);
-                    taskDate.setHours(0, 0, 0, 0);
-                    return taskDate.getTime() === date.getTime();
+                // Count tasks completed OR claimed on this date
+                const tasksOnDate = allTasks.filter((task) => {
+                    // Check completed date
+                    if (task.completedDate) {
+                        const completedDate = new Date(task.completedDate);
+                        completedDate.setHours(0, 0, 0, 0);
+                        if (completedDate.getTime() === date.getTime()) return true;
+                    }
+
+                    // Check claimed date
+                    if (task.claimedAt) {
+                        const claimedDate = new Date(task.claimedAt);
+                        claimedDate.setHours(0, 0, 0, 0);
+                        if (claimedDate.getTime() === date.getTime()) return true;
+                    }
+
+                    return false;
                 }).length;
 
                 week.push({
@@ -238,7 +245,23 @@ export default function Profile() {
     };
 
     const getTotalContributions = () => {
-        return completedTasks.length;
+        // Count unique dates where tasks were completed or claimed
+        const uniqueDates = new Set();
+
+        allTasks.forEach(task => {
+            if (task.completedDate) {
+                const date = new Date(task.completedDate);
+                date.setHours(0, 0, 0, 0);
+                uniqueDates.add(date.getTime());
+            }
+            if (task.claimedAt) {
+                const date = new Date(task.claimedAt);
+                date.setHours(0, 0, 0, 0);
+                uniqueDates.add(date.getTime());
+            }
+        });
+
+        return allTasks.filter(t => t.completedDate || t.claimedAt).length;
     };
 
     const getRoleIcon = (role: string) => {
@@ -343,7 +366,7 @@ export default function Profile() {
                             <View>
                                 <Text style={styles.sectionTitle}>Task Contributions</Text>
                                 <Text style={styles.contributionSubtext}>
-                                    {getTotalContributions()} tasks completed in the last 12 weeks
+                                    {getTotalContributions()} tasks completed/claimed in the last 12 weeks
                                 </Text>
                             </View>
                         </View>
@@ -1052,4 +1075,4 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: "600",
     },
-});
+});45
