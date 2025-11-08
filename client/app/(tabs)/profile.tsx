@@ -18,6 +18,8 @@ import { useRouter } from "expo-router";
 import axios from "axios";
 import { IP } from "@/data/ip";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LogBox } from 'react-native';
+LogBox.ignoreAllLogs();
 
 const COLORS = {
     primary: "#2563EB",
@@ -1075,4 +1077,4 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: "600",
     },
-});45
+});
