@@ -1,5 +1,6 @@
 import { Stack, useRouter, useSegments } from "expo-router";
-import { useEffect } from "react";
+import React, { useEffect } from "react";
+import { View, ActivityIndicator } from "react-native";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 
 function RootLayoutNav() {
@@ -12,12 +13,24 @@ function RootLayoutNav() {
 
     const currentRoute = segments[0];
 
-    if (user && (currentRoute === "selectauth" || currentRoute === "login" || currentRoute === "autentificareutilizator")) {
-      router.replace("/home" as any);
-    } else if (!user && currentRoute !== "selectauth" && currentRoute !== "login" && currentRoute !== "autentificareutilizator") {
-      router.replace("/selectauth");
+    if (user) {
+      if (currentRoute !== "home") {
+        router.replace("/home" as any);
+      }
+    } else {
+      if (currentRoute !== "login" && currentRoute !== "autentificareutilizator" && currentRoute !== "selectauth") {
+        router.replace("/selectauth" as any);
+      }
     }
   }, [user, isLoading, segments]);
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#fff" }}>
+        <ActivityIndicator size="large" color="#2563EB" />
+      </View>
+    );
+  }
 
   return (
     <Stack>
