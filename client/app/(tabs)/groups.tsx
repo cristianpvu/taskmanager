@@ -79,7 +79,8 @@ export default function Teams() {
         },
       });
       const userGroups = response.data.filter((group: Group) =>
-        group.members.some((member) => member._id === user?._id)
+        group.members.some((member) => member._id === user?._id) &&
+        group.name !== user?.department
       );
       
       setGroups(userGroups);
