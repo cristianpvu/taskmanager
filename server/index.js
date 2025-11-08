@@ -5,6 +5,8 @@ import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import multer from "multer";
 import crypto from "crypto";
+import http from "http";
+import { Server } from "socket.io";
 import { v2 as cloudinary } from "cloudinary";
 import streamifier from "streamifier";
 import { User } from "./models/userModel.js";
@@ -33,6 +35,120 @@ const upload = multer({
   storage: storage,
   limits: { fileSize: 10 * 1024 * 1024 } 
 });
+
+const connectedUsers = new Map();
+
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  console.log("Socket auth attempt, token exists:", !!token);
+  
+  if (!token) {
+    console.log("No token provided in socket handshake");
+    return next(new Error("Authentication error: No token"));
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log("Token verified, decoded:", decoded);
+    socket.userId = decoded.userId || decoded.id;
+    console.log("Socket userId set to:", socket.userId);
+    next();
+  } catch (error) {
+    console.log("Token verification failed:", error.message);
+    return next(new Error("Authentication error: Invalid token"));
+  }
+});
+
+io.on("connection", (socket) => {
+  if (!socket.userId) {
+    console.log("⚠️ WARNING: Socket connected but userId is undefined!");
+    socket.disconnect();
+    return;
+  }
+  
+  console.log(`WebSocket: User ${socket.userId} connected with socket ${socket.id}`);
+  connectedUsers.set(socket.userId.toString(), socket.id);
+  console.log(`Total connected users: ${connectedUsers.size}`);
+  
+  socket.on("disconnect", () => {
+    console.log(`WebSocket: User ${socket.userId} disconnected`);
+    if (socket.userId) {
+      connectedUsers.delete(socket.userId.toString());
+    }
+    console.log(`👥 Total connected users: ${connectedUsers.size}`);
+  });
+});
+
+const emitNotificationToUser = (userId, notification) => {
+  const userIdStr = userId.toString();
+  console.log(`Attempting to emit notification to user: ${userIdStr}`);
+  console.log(`Connected users:`, Array.from(connectedUsers.keys()));
+  
+  let socketId = connectedUsers.get(userIdStr);
+  if (!socketId && typeof userId === 'object') {
+    socketId = connectedUsers.get(userId._id?.toString());
+  }
+  
+  if (socketId) {
+    console.log(`Found socket ID: ${socketId}, emitting notification`);
+    io.to(socketId).emit("notification", notification);
+    console.log(`Notification emitted successfully!`);
+  } else {
+    console.log(`User ${userIdStr} not connected via WebSocket`);
+  }
+};
+
+const createAndEmitNotification = async (recipientId, senderId, type, taskId, message) => {
+  try {
+    console.log(`🔔 Creating notification for user ${recipientId}`);
+    const notification = await Notification.create({
+      recipient: recipientId,
+      sender: senderId,
+      type,
+      task: taskId,
+      message
+    });
+    
+    await notification.populate("sender", "firstName lastName profilePhoto");
+    await notification.populate("task", "title");
+    
+    console.log(`📨 Notification created:`, {
+      id: notification._id,
+      recipient: recipientId,
+      message: notification.message
+    });
+    
+    emitNotificationToUser(recipientId, notification);
+    
+    return notification;
+  } catch (error) {
+    console.error("Error creating notification:", error);
+  }
+};
+
+const notifyGroupMembers = async (groupIds, senderId, taskId, message) => {
+  try {
+    console.log(`Notifying group members for groups:`, groupIds);
+    const groups = await Group.find({ _id: { $in: groupIds } }).populate("members", "_id");
+    const memberIds = new Set();
+    
+    groups.forEach(group => {
+      console.log(`Group ${group._id} has ${group.members.length} members`);
+      group.members.forEach(member => {
+        if (member._id.toString() !== senderId) {
+          memberIds.add(member._id.toString());
+        }
+      });
+    });
+    
+    console.log(`Sending notifications to ${memberIds.size} group members`);
+    for (const memberId of memberIds) {
+      await createAndEmitNotification(memberId, senderId, "task_assigned", taskId, message);
+    }
+  } catch (error) {
+    console.error("Error notifying group members:", error);
+  }
+};
 
 const logActivity = async (taskId, userId, type, description, metadata = {}) => {
   try {
@@ -619,15 +735,24 @@ app.post("/task/create", verifyToken, async (req, res) => {
     if (assignedTo && assignedTo.length > 0) {
       for (const userId of assignedTo) {
         if (userId !== req.userId) {
-          await Notification.create({
-            recipient: userId,
-            sender: req.userId,
-            type: "task_assigned",
-            task: task._id,
-            message: `You have been assigned to task: ${title}`
-          });
+          await createAndEmitNotification(
+            userId,
+            req.userId,
+            "task_assigned",
+            task._id,
+            `You have been assigned to task: ${title || "[Encrypted]"}`
+          );
         }
       }
+    }
+    
+    if (assignedGroups && assignedGroups.length > 0) {
+      await notifyGroupMembers(
+        assignedGroups,
+        req.userId,
+        task._id,
+        `New task assigned to your group: ${title || "[Encrypted]"}`
+      );
     }
     const populatedTask = await Task.findById(task._id)
       .populate("createdBy", "firstName lastName profilePhoto role")
@@ -918,13 +1043,15 @@ app.post("/task/:id/assign", verifyToken, async (req, res) => {
       },
       { new: true }
     ).populate("assignedTo", "firstName lastName profilePhoto role");
-    await Notification.create({
-      recipient: userId,
-      sender: req.userId,
-      type: "task_assigned",
-      task: task._id,
-      message: `You have been assigned to task: ${task.title}`
-    });
+    
+    await createAndEmitNotification(
+      userId,
+      req.userId,
+      "task_assigned",
+      task._id,
+      `You have been assigned to task: ${task.title}`
+    );
+    
     return res.status(200).json({
       message: "User assigned to task",
       task
@@ -1018,13 +1145,13 @@ app.put("/task/:id/reassign", verifyToken, async (req, res) => {
 
     await task.save();
 
-    await Notification.create({
-      recipient: userId,
-      sender: req.userId,
-      type: "task_assigned",
-      task: task._id,
-      message: `You have been reassigned to task: ${task.title}`,
-    });
+    await createAndEmitNotification(
+      userId,
+      req.userId,
+      "task_assigned",
+      task._id,
+      `You have been reassigned to task: ${task.title}`
+    );
 
     await task.populate("assignedTo", "firstName lastName email profilePhoto role department");
     await task.populate("reassignHistory.reassignedBy", "firstName lastName email");
@@ -1117,13 +1244,13 @@ app.put("/task/:id/assign-to-me", verifyToken, async (req, res) => {
     
     await task.save();
 
-    await Notification.create({
-      recipient: task.createdBy,
-      sender: req.userId,
-      type: "task_assigned",
-      task: task._id,
-      message: `assigned themselves to task: ${task.title}`
-    });
+    await createAndEmitNotification(
+      task.createdBy,
+      req.userId,
+      "task_assigned",
+      task._id,
+      `assigned themselves to task: ${task.title}`
+    );
 
     await task.populate("assignedTo", "firstName lastName email profilePhoto role department");
 
@@ -1201,22 +1328,22 @@ app.put("/task/:id/assign-user", verifyToken, async (req, res) => {
     
     await task.save();
 
-    await Notification.create({
-      recipient: userId,
-      sender: req.userId,
-      type: "task_assigned",
-      task: task._id,
-      message: `assigned you to task: ${task.title}`
-    });
+    await createAndEmitNotification(
+      userId,
+      req.userId,
+      "task_assigned",
+      task._id,
+      `assigned you to task: ${task.title}`
+    );
 
     if (task.createdBy.toString() !== req.userId) {
-      await Notification.create({
-        recipient: task.createdBy,
-        sender: req.userId,
-        type: "task_assigned",
-        task: task._id,
-        message: `assigned ${targetUser.firstName} ${targetUser.lastName} to task: ${task.title}`
-      });
+      await createAndEmitNotification(
+        task.createdBy,
+        req.userId,
+        "task_assigned",
+        task._id,
+        `assigned ${targetUser.firstName} ${targetUser.lastName} to task: ${task.title}`
+      );
     }
 
     await task.populate("assignedTo", "firstName lastName email profilePhoto role department");
@@ -1849,11 +1976,9 @@ app.get("/comments/task/:taskId", verifyToken, async (req, res) => {
       .sort({ createdAt: -1 })
       .populate("author", "firstName lastName profilePhoto role");
 
-    // Check if user is CEO/Admin
     const user = await User.findById(req.userId);
     const isCEO = user.role === "CEO" || user.role === "Admin";
 
-    // For non-CEO users with encrypted comments, remove plain text
     const processedComments = comments.map(comment => {
       const commentObj = comment.toObject();
       if (!isCEO && commentObj.contentEncrypted) {
@@ -2078,6 +2203,21 @@ app.delete("/message/:id", verifyToken, async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+app.get("/notifications", verifyToken, async (req, res) => {
+  try {
+    const notifications = await Notification.find({ recipient: req.userId })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .populate("sender", "firstName lastName profilePhoto")
+      .populate("task", "title")
+      .populate("comment", "content");
+    return res.status(200).json(notifications);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 app.get("/notifications/user/:userId", verifyToken, async (req, res) => {
   try {
     const notifications = await Notification.find({ recipient: req.params.userId })
@@ -2092,7 +2232,8 @@ app.get("/notifications/user/:userId", verifyToken, async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
-app.put("/notification/:id/read", verifyToken, async (req, res) => {
+
+app.put("/notifications/:id/read", verifyToken, async (req, res) => {
   try {
     await Notification.findByIdAndUpdate(req.params.id, {
       isRead: true,
@@ -2104,6 +2245,20 @@ app.put("/notification/:id/read", verifyToken, async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
+app.put("/notifications/read-all", verifyToken, async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { recipient: req.userId, isRead: false },
+      { isRead: true, readAt: new Date() }
+    );
+    return res.status(200).json({ message: "All notifications marked as read" });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 app.put("/notifications/user/:userId/read-all", verifyToken, async (req, res) => {
   try {
     await Notification.updateMany(
@@ -2187,7 +2342,6 @@ app.get("/dashboard/:userId", verifyToken, async (req, res) => {
   }
 });
 
-// Encryption key management endpoints
 app.post("/group/:id/generate-key", verifyToken, async (req, res) => {
   try {
     const group = await Group.findById(req.params.id);
@@ -2196,21 +2350,23 @@ app.post("/group/:id/generate-key", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Group not found" });
     }
 
-    // Check if user is group leader or admin
     const user = await User.findById(req.userId);
     if (group.leader.toString() !== req.userId && user.role !== "CEO" && user.role !== "Admin") {
       return res.status(403).json({ message: "Only group leader or admin can generate encryption key" });
     }
 
-    // Generate a random 256-bit key
-    const encryptionKey = crypto.randomBytes(32).toString('base64');
+    const plainGroupKey = crypto.randomBytes(32).toString('base64');
     
-    group.encryptionKey = encryptionKey;
+    const encryptedGroupKey = encryptGroupKey(plainGroupKey);
+    
+    group.encryptionKey = encryptedGroupKey;
     await group.save();
+
+    console.log(`🔐 Generated and encrypted key for group ${group.name}`);
 
     return res.status(200).json({ 
       message: "Encryption key generated successfully",
-      encryptionKey 
+      encryptionKey: plainGroupKey 
     });
   } catch (error) {
     console.log(error.message);
@@ -2226,7 +2382,6 @@ app.get("/group/:id/encryption-key", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Group not found" });
     }
 
-    // Check if user is a member of the group or admin
     const user = await User.findById(req.userId);
     const isMember = group.members.some(member => member._id.toString() === req.userId);
     
@@ -2247,7 +2402,6 @@ app.get("/group/:id/encryption-key", verifyToken, async (req, res) => {
   }
 });
 
-// Generate keys for all groups that don't have one
 app.post("/admin/generate-all-group-keys", verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.userId);
@@ -2278,8 +2432,9 @@ app.post("/admin/generate-all-group-keys", verifyToken, async (req, res) => {
 
 mongoose.connect(mongoDBURL).then(() => {
   console.log("App connected to database");
-  app.listen(PORT, () => {
+  httpServer.listen(PORT, () => {
     console.log(`App is listening on port ${PORT}`);
+    console.log(`Socket.IO server ready`);
   });
 }).catch((error) => {
   console.log(error);
