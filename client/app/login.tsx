@@ -1,27 +1,29 @@
-import { Text, View, SafeAreaView, TextInput, TouchableOpacity } from "react-native";
+import { Text, View, SafeAreaView, TextInput, TouchableOpacity, Alert } from "react-native";
 import { useState } from "react";
 import { router } from "expo-router";
-import axios from "axios";
-import { IP } from "@/data/ip";
+import { useAuth } from "@/context/AuthContext";
+import { authAPI } from "@/services/api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const { login } = useAuth();
 
   const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert("Eroare", "Completează toate câmpurile!");
+      return;
+    }
+
     try {
-  const apiURL = `http://${IP}:5555/utilizator/login`;
-      const response = await axios.post(apiURL, {
-        email,
-        password
-      });
-      if (response.data.data === "Corect") {
-        router.push("/selectauth");
-      } else {
-        alert("Email sau parolă incorectă!");
+      const response = await authAPI.login(email, password);
+      
+      if (response.token && response.user) {
+        await login(response.token, response.user);
+        router.replace("/home" as any);
       }
-    } catch (error) {
-      alert("Eroare la autentificare!");
+    } catch (error: any) {
+      Alert.alert("Eroare", error.response?.data?.message || "Eroare la autentificare!");
     }
   };
 
