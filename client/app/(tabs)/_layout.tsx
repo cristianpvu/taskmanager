@@ -76,7 +76,7 @@ export default function TabsLayout() {
             size={24}
             color={isActive("/groups") ? COLORS.primary : COLORS.textLight}
           />
-          <Text style={[styles.navText, isActive("/groups") && styles.navTextActive]}>Groups</Text>
+          <Text style={[styles.navText, isActive("/groups") && styles.navTextActive]}>Teams</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
