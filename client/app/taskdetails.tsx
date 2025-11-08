@@ -121,6 +121,26 @@ interface Comment {
   createdAt: string;
 }
 
+const ROLE_HIERARCHY: { [key: string]: string[] } = {
+  "CEO": ["Project Manager", "Team Lead", "Employee", "Intern", "Contractor"],
+  "Project Manager": ["Team Lead", "Employee", "Intern", "Contractor"],
+  "Team Lead": ["Employee", "Intern", "Contractor"],
+  "Employee": [],
+  "Intern": [],
+  "Contractor": []
+};
+
+const SUBTASK_MANAGER_ROLES = ["CEO", "Project Manager", "Team Lead"];
+
+const canAssignToRole = (userRole: string, targetRole: string): boolean => {
+  return ROLE_HIERARCHY[userRole]?.includes(targetRole) || false;
+};
+
+const filterAssignableUsers = (users: User[], currentUserRole: string): User[] => {
+  const assignableRoles = ROLE_HIERARCHY[currentUserRole] || [];
+  return users.filter(user => assignableRoles.includes(user.role));
+};
+
 export default function TaskDetails() {
   const params = useLocalSearchParams();
   const { id, returnToGroup } = params;
@@ -408,7 +428,10 @@ export default function TaskDetails() {
         `http://${IP}:5555/task/${id}/available-assignees`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setAvailableUsers(response.data);
+      
+      // Filter users based on current user's role hierarchy
+      const filteredUsers = filterAssignableUsers(response.data, user?.role || "");
+      setAvailableUsers(filteredUsers);
     } catch (error) {
       console.error("Error loading available users:", error);
       Alert.alert("Error", "Failed to load available users");
@@ -554,6 +577,7 @@ export default function TaskDetails() {
   const isAssigned = task.assignedTo.some((u: any) => u._id === user?._id);
   const isCreator = task.createdBy._id === user?._id;
   const canEdit = isAssigned || isCreator;
+  const canManageSubtasks = SUBTASK_MANAGER_ROLES.includes(user?.role || "");
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -652,6 +676,12 @@ export default function TaskDetails() {
               </TouchableOpacity>
               {task.reassignCount >= 3 && (
                 <Text style={styles.reassignLimitText}>Reassign limit reached</Text>
+              )}
+              {/* Show assignable roles info */}
+              {ROLE_HIERARCHY[user?.role || ""]?.length > 0 && (
+                <Text style={styles.roleInfoText}>
+                  Can assign to: {ROLE_HIERARCHY[user?.role || ""].join(", ")}
+                </Text>
               )}
             </View>
           )}
@@ -859,7 +889,7 @@ export default function TaskDetails() {
             <Text style={styles.sectionTitle}>
               Subtasks ({task.subtasks?.length || 0})
             </Text>
-            {canEdit && (
+            {canEdit && canManageSubtasks && (
               <TouchableOpacity
                 style={styles.linkTaskButton}
                 onPress={() => {
@@ -959,7 +989,7 @@ export default function TaskDetails() {
                   )}
                   </TouchableOpacity>
 
-                  {canEdit && (
+                  {canEdit && canManageSubtasks && (
                     <TouchableOpacity
                       style={styles.unlinkButton}
                       onPress={(e) => {
@@ -2106,5 +2136,11 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontSize: 14,
     fontWeight: '600',
+  },
+  roleInfoText: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    marginTop: 4,
+    fontStyle: 'italic',
   },
 });

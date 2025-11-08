@@ -84,6 +84,26 @@ interface Task {
   checklist?: any[];
 }
 
+const ROLE_HIERARCHY: { [key: string]: string[] } = {
+  "CEO": ["Project Manager", "Team Lead", "Employee", "Intern", "Contractor"],
+  "Project Manager": ["Team Lead", "Employee", "Intern", "Contractor"],
+  "Team Lead": ["Employee", "Intern", "Contractor"],
+  "Employee": [],
+  "Intern": [],
+  "Contractor": []
+};
+
+const SUBTASK_MANAGER_ROLES = ["CEO", "Project Manager", "Team Lead"];
+
+const canAssignToRole = (userRole: string, targetRole: string): boolean => {
+  return ROLE_HIERARCHY[userRole]?.includes(targetRole) || false;
+};
+
+const filterAssignableUsers = (users: User[], currentUserRole: string): User[] => {
+  const assignableRoles = ROLE_HIERARCHY[currentUserRole] || [];
+  return users.filter(user => assignableRoles.includes(user.role));
+};
+
 export default function Feed() {
   const { user } = useAuth();
   const router = useRouter();
@@ -168,8 +188,12 @@ export default function Feed() {
         headers: { Authorization: `Bearer ${token}` },
         params: { query, department: user?.department },
       });
+      
+      // Filter users based on role hierarchy
       const filtered = response.data.filter(
-        (u: User) => u._id !== user?._id && !selectedUsers.find((m) => m._id === u._id)
+        (u: User) => u._id !== user?._id && 
+                    !selectedUsers.find((m) => m._id === u._id) &&
+                    canAssignToRole(user?.role || "", u.role)
       );
       setUserSearchResults(filtered);
     } catch (error) {
