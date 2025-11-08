@@ -801,6 +801,303 @@ app.post("/task/:id/unassign", verifyToken, async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
+app.put("/task/:id/reassign", verifyToken, async (req, res) => {
+  try {
+    const { userId, reason } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    const task = await Task.findById(req.params.id);
+
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    if (task.reassignCount >= 3) {
+      return res.status(400).json({ message: "Task has reached maximum reassign limit (3)" });
+    }
+
+    const targetUser = await User.findById(userId);
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (targetUser.department !== task.department) {
+      return res.status(400).json({ message: "User must be in the same department" });
+    }
+
+    if (task.assignedTo.some(id => id.toString() === userId)) {
+      return res.status(400).json({ message: "User is already assigned to this task" });
+    }
+
+    task.reassignHistory.push({
+      reassignedBy: req.userId,
+      reassignedTo: userId,
+      reassignedAt: new Date(),
+      reason: reason || "",
+    });
+
+    task.assignedTo = [userId];
+    task.reassignCount += 1;
+
+    task.activityLog.push({
+      type: "reassigned",
+      user: req.userId,
+      description: `Reassigned task to ${targetUser.firstName} ${targetUser.lastName}`,
+      metadata: { 
+        reassignedTo: userId,
+        reason: reason || "",
+        reassignCount: task.reassignCount 
+      },
+      timestamp: new Date(),
+    });
+
+    await task.save();
+
+    await Notification.create({
+      recipient: userId,
+      sender: req.userId,
+      type: "task_assigned",
+      task: task._id,
+      message: `You have been reassigned to task: ${task.title}`,
+    });
+
+    await task.populate("assignedTo", "firstName lastName email profilePhoto role department");
+    await task.populate("reassignHistory.reassignedBy", "firstName lastName email");
+    await task.populate("reassignHistory.reassignedTo", "firstName lastName email");
+
+    return res.status(200).json({
+      message: "Task reassigned successfully",
+      task,
+      reassignsRemaining: 3 - task.reassignCount,
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.get("/task/:id/available-assignees", verifyToken, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    const availableUsers = await User.find({
+      department: task.department,
+      _id: { $nin: task.assignedTo },
+    })
+      .select("firstName lastName email profilePhoto role department")
+      .limit(50);
+
+    return res.status(200).json(availableUsers);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.put("/task/:id/assign-to-me", verifyToken, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id)
+      .populate("assignedTo", "firstName lastName email")
+      .populate("assignedGroups", "name");
+
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    if (task.assignedTo.some(user => user._id.toString() === req.userId)) {
+      return res.status(400).json({ message: "You are already assigned to this task" });
+    }
+
+    const hasGroupAssignment = task.assignedGroups && task.assignedGroups.length > 0;
+    
+    if (!hasGroupAssignment) {
+      return res.status(400).json({ 
+        message: "This task must have a group assignment to be self-assigned" 
+      });
+    }
+
+    const user = await User.findById(req.userId).populate("groups");
+    const userGroupIds = user.groups.map(g => g._id.toString());
+    const taskGroupIds = task.assignedGroups.map(g => g._id.toString());
+    
+    const isInAssignedGroup = userGroupIds.some(ugId => taskGroupIds.includes(ugId));
+    
+    if (!isInAssignedGroup) {
+      return res.status(403).json({ 
+        message: "You must be a member of one of the assigned groups to take this task" 
+      });
+    }
+
+    task.assignedTo.push(req.userId);
+    
+    task.activityLog.push({
+      type: "self_assigned",
+      user: req.userId,
+      description: "Assigned themselves to the task",
+      metadata: {},
+      timestamp: new Date(),
+    });
+    
+    await task.save();
+
+    await Notification.create({
+      recipient: task.createdBy,
+      sender: req.userId,
+      type: "task_assigned",
+      task: task._id,
+      message: `assigned themselves to task: ${task.title}`
+    });
+
+    await task.populate("assignedTo", "firstName lastName email profilePhoto role department");
+
+    return res.status(200).json({
+      message: "Successfully assigned task to yourself",
+      task
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Assign task to someone else when it has group assignment
+app.put("/task/:id/assign-user", verifyToken, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    const task = await Task.findById(req.params.id)
+      .populate("assignedTo", "firstName lastName email")
+      .populate("assignedGroups", "name");
+
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    if (task.assignedTo.some(user => user._id.toString() === userId)) {
+      return res.status(400).json({ message: "User is already assigned to this task" });
+    }
+
+    const hasGroupAssignment = task.assignedGroups && task.assignedGroups.length > 0;
+    
+    if (!hasGroupAssignment) {
+      return res.status(400).json({ 
+        message: "This task must have a group assignment to assign to group members" 
+      });
+    }
+
+    const currentUser = await User.findById(req.userId).populate("groups");
+    const currentUserGroupIds = currentUser.groups.map(g => g._id.toString());
+    const taskGroupIds = task.assignedGroups.map(g => g._id.toString());
+    
+    const currentUserInGroup = currentUserGroupIds.some(ugId => taskGroupIds.includes(ugId));
+    
+    if (!currentUserInGroup) {
+      return res.status(403).json({ 
+        message: "You must be a member of one of the assigned groups to assign this task" 
+      });
+    }
+
+    const targetUser = await User.findById(userId).populate("groups");
+    
+    if (!targetUser) {
+      return res.status(404).json({ message: "Target user not found" });
+    }
+
+    const targetUserGroupIds = targetUser.groups.map(g => g._id.toString());
+    const targetUserInGroup = targetUserGroupIds.some(ugId => taskGroupIds.includes(ugId));
+    
+    if (!targetUserInGroup) {
+      return res.status(403).json({ 
+        message: "Target user must be a member of one of the assigned groups" 
+      });
+    }
+
+    task.assignedTo.push(userId);
+    
+    task.activityLog.push({
+      type: "assigned",
+      user: req.userId,
+      description: `Assigned ${targetUser.firstName} ${targetUser.lastName} to the task`,
+      metadata: { assignedUser: userId },
+      timestamp: new Date(),
+    });
+    
+    await task.save();
+
+    await Notification.create({
+      recipient: userId,
+      sender: req.userId,
+      type: "task_assigned",
+      task: task._id,
+      message: `assigned you to task: ${task.title}`
+    });
+
+    if (task.createdBy.toString() !== req.userId) {
+      await Notification.create({
+        recipient: task.createdBy,
+        sender: req.userId,
+        type: "task_assigned",
+        task: task._id,
+        message: `assigned ${targetUser.firstName} ${targetUser.lastName} to task: ${task.title}`
+      });
+    }
+
+    await task.populate("assignedTo", "firstName lastName email profilePhoto role department");
+
+    return res.status(200).json({
+      message: "Successfully assigned task to user",
+      task
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.get("/task/:id/available-group-members", verifyToken, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id)
+      .populate("assignedTo", "_id")
+      .populate("assignedGroups", "_id");
+
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    if (!task.assignedGroups || task.assignedGroups.length === 0) {
+      return res.status(400).json({ 
+        message: "This task does not have group assignments" 
+      });
+    }
+
+    const groupIds = task.assignedGroups.map(g => g._id);
+    const assignedUserIds = task.assignedTo.map(u => u._id.toString());
+
+    const availableUsers = await User.find({
+      groups: { $in: groupIds },
+      _id: { $nin: assignedUserIds }
+    })
+      .select("firstName lastName email profilePhoto role department")
+      .limit(50);
+
+    return res.status(200).json(availableUsers);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 app.post("/task/:id/claim", verifyToken, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id);
