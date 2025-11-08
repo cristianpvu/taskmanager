@@ -37,6 +37,10 @@ const groupSchema = mongoose.Schema(
     isDepartmentGroup: {
         type: Boolean,
         default: false,
+    },
+    encryptionKey: {
+      type: String,
+      default: null,
     }
   },
   {

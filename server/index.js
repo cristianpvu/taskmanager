@@ -4,6 +4,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import multer from "multer";
+import crypto from "crypto";
 import { v2 as cloudinary } from "cloudinary";
 import streamifier from "streamifier";
 import { User } from "./models/userModel.js";
@@ -539,7 +540,9 @@ app.post("/task/create", verifyToken, async (req, res) => {
   try {
     const {
       title,
+      titleEncrypted,
       description,
+      descriptionEncrypted,
       status,
       priority,
       color,
@@ -559,9 +562,16 @@ app.post("/task/create", verifyToken, async (req, res) => {
       progressPercentage = Math.round((completedCount / checklist.length) * 100);
     }
 
+    // If encrypted data exists, don't store plain text in database
+    // Plain text is only sent for CEO/Admin viewing, not for storage
+    const shouldEncrypt = titleEncrypted && descriptionEncrypted;
+    
     const task = await Task.create({
-      title,
-      description,
+      title: shouldEncrypt ? "[Encrypted]" : title,
+      titleEncrypted: titleEncrypted || null,
+      description: shouldEncrypt ? "[Encrypted]" : description,
+      descriptionEncrypted: descriptionEncrypted || null,
+      encryptedForGroups: assignedGroups || [],
       status: status || "Open",
       priority: priority || "Medium",
       color: color || "#3B82F6",
@@ -723,7 +733,56 @@ app.get("/task/:id", verifyToken, async (req, res) => {
     if (!task) {
       return res.status(404).json({ message: "Task not found" });
     }
-    return res.status(200).json(task);
+
+    // Check if user is CEO/Admin - they decrypt on server
+    const user = await User.findById(req.userId);
+    const isCEO = user.role === "CEO" || user.role === "Admin";
+
+    // Convert to plain object to modify
+    const taskObject = task.toObject();
+
+    if (taskObject.titleEncrypted && taskObject.descriptionEncrypted) {
+      if (isCEO) {
+        // CEO/Admin: Decrypt on server and show plain text
+        try {
+          const group = await Group.findById(taskObject.encryptedForGroups[0]);
+          if (group && group.encryptionKey) {
+            // Decrypt using group key
+            const keyBuffer = Buffer.from(group.encryptionKey, 'base64');
+            
+            // Decrypt title
+            const [titleIV, titleEncrypted] = taskObject.titleEncrypted.split(':');
+            const titleDecipher = crypto.createDecipheriv(
+              'aes-256-cbc',
+              keyBuffer,
+              Buffer.from(titleIV, 'base64')
+            );
+            taskObject.title = titleDecipher.update(titleEncrypted, 'base64', 'utf8') + 
+                              titleDecipher.final('utf8');
+            
+            // Decrypt description
+            const [descIV, descEncrypted] = taskObject.descriptionEncrypted.split(':');
+            const descDecipher = crypto.createDecipheriv(
+              'aes-256-cbc',
+              keyBuffer,
+              Buffer.from(descIV, 'base64')
+            );
+            taskObject.description = descDecipher.update(descEncrypted, 'base64', 'utf8') + 
+                                    descDecipher.final('utf8');
+          }
+        } catch (decryptError) {
+          console.error('Server decryption error for CEO:', decryptError);
+          taskObject.title = '[Decryption Error]';
+          taskObject.description = '[Decryption Error]';
+        }
+      } else {
+        // Regular users: Remove plain text, keep encrypted for client-side decryption
+        taskObject.title = null;
+        taskObject.description = null;
+      }
+    }
+
+    return res.status(200).json(taskObject);
   } catch (error) {
     console.log(error.message);
     res.status(500).json({ message: error.message });
@@ -1730,11 +1789,12 @@ app.delete("/task/:taskId/checklist/:itemId", verifyToken, async (req, res) => {
 
 app.post("/comment/create", verifyToken, async (req, res) => {
   try {
-    const { taskId, content, parentComment } = req.body;
+    const { taskId, content, contentEncrypted, parentComment } = req.body;
     const comment = await Comment.create({
       task: taskId,
       author: req.userId,
       content,
+      contentEncrypted: contentEncrypted || null,
       parentComment: parentComment || null
     });
     const populatedComment = await Comment.findById(comment._id)
@@ -1781,7 +1841,21 @@ app.get("/comments/task/:taskId", verifyToken, async (req, res) => {
     })
       .sort({ createdAt: -1 })
       .populate("author", "firstName lastName profilePhoto role");
-    return res.status(200).json(comments);
+
+    // Check if user is CEO/Admin
+    const user = await User.findById(req.userId);
+    const isCEO = user.role === "CEO" || user.role === "Admin";
+
+    // For non-CEO users with encrypted comments, remove plain text
+    const processedComments = comments.map(comment => {
+      const commentObj = comment.toObject();
+      if (!isCEO && commentObj.contentEncrypted) {
+        commentObj.content = null;
+      }
+      return commentObj;
+    });
+
+    return res.status(200).json(processedComments);
   } catch (error) {
     console.log(error.message);
     res.status(500).json({ message: error.message });
@@ -2105,6 +2179,96 @@ app.get("/dashboard/:userId", verifyToken, async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
+// Encryption key management endpoints
+app.post("/group/:id/generate-key", verifyToken, async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id);
+    
+    if (!group) {
+      return res.status(404).json({ message: "Group not found" });
+    }
+
+    // Check if user is group leader or admin
+    const user = await User.findById(req.userId);
+    if (group.leader.toString() !== req.userId && user.role !== "CEO" && user.role !== "Admin") {
+      return res.status(403).json({ message: "Only group leader or admin can generate encryption key" });
+    }
+
+    // Generate a random 256-bit key
+    const encryptionKey = crypto.randomBytes(32).toString('base64');
+    
+    group.encryptionKey = encryptionKey;
+    await group.save();
+
+    return res.status(200).json({ 
+      message: "Encryption key generated successfully",
+      encryptionKey 
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.get("/group/:id/encryption-key", verifyToken, async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id).populate("members", "_id");
+    
+    if (!group) {
+      return res.status(404).json({ message: "Group not found" });
+    }
+
+    // Check if user is a member of the group or admin
+    const user = await User.findById(req.userId);
+    const isMember = group.members.some(member => member._id.toString() === req.userId);
+    
+    if (!isMember && user.role !== "CEO" && user.role !== "Admin") {
+      return res.status(403).json({ message: "You must be a group member to access the encryption key" });
+    }
+
+    if (!group.encryptionKey) {
+      return res.status(404).json({ message: "Group does not have an encryption key yet" });
+    }
+
+    return res.status(200).json({ 
+      encryptionKey: group.encryptionKey 
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Generate keys for all groups that don't have one
+app.post("/admin/generate-all-group-keys", verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    
+    if (user.role !== "CEO" && user.role !== "Admin") {
+      return res.status(403).json({ message: "Only admins can perform this action" });
+    }
+
+    const groupsWithoutKeys = await Group.find({ encryptionKey: null });
+    
+    let generatedCount = 0;
+    for (const group of groupsWithoutKeys) {
+      const encryptionKey = crypto.randomBytes(32).toString('base64');
+      group.encryptionKey = encryptionKey;
+      await group.save();
+      generatedCount++;
+    }
+
+    return res.status(200).json({ 
+      message: `Generated encryption keys for ${generatedCount} groups`,
+      count: generatedCount
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 mongoose.connect(mongoDBURL).then(() => {
   console.log("App connected to database");
   app.listen(PORT, () => {
