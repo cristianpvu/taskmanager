@@ -17,6 +17,10 @@ const commentSchema = mongoose.Schema(
       required: true,
       maxlength: 1000,
     },
+    contentEncrypted: {
+      type: String,
+      default: null,
+    },
     parentComment: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Comment",

@@ -8,11 +8,23 @@ const taskSchema = mongoose.Schema(
       trim: true,
       maxlength: 200,
     },
+    titleEncrypted: {
+      type: String,
+      default: null,
+    },
     description: {
       type: String,
       required: true,
       maxlength: 2000,
     },
+    descriptionEncrypted: {
+      type: String,
+      default: null,
+    },
+    encryptedForGroups: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Group",
+    }],
     status: {
       type: String,
       enum: ["Open", "In Progress", "Under Review", "Completed", "Blocked", "Cancelled", "Pending"],

@@ -19,6 +19,7 @@ import { useAuth } from "@/context/AuthContext";
 import axios from "axios";
 import { IP } from "@/data/ip";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { decryptText, encryptText } from "@/utils/encryption";
 
 const COLORS = {
   primary: "#2563EB",
@@ -80,7 +81,10 @@ interface ReassignHistory {
 interface Task {
   _id: string;
   title: string;
+  titleEncrypted?: string;
   description: string;
+  descriptionEncrypted?: string;
+  encryptedForGroups?: string[];
   status: string;
   priority: string;
   color: string;
@@ -113,6 +117,7 @@ interface Task {
 interface Comment {
   _id: string;
   content: string;
+  contentEncrypted?: string;
   author: {
     firstName: string;
     lastName: string;
@@ -184,6 +189,31 @@ export default function TaskDetails() {
       if (!taskData.checklist) {
         taskData.checklist = [];
       }
+
+      // Decrypt if encrypted and user is not CEO
+      if (taskData.titleEncrypted && !taskData.title) {
+        try {
+          // Get encryption key from the first assigned group
+          if (taskData.assignedGroups && taskData.assignedGroups.length > 0) {
+            const groupId = taskData.assignedGroups[0]._id || taskData.assignedGroups[0];
+            const keyResponse = await axios.get(
+              `http://${IP}:5555/group/${groupId}/encryption-key`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            
+            const encryptionKey = keyResponse.data.encryptionKey;
+            
+            // Decrypt title and description
+            taskData.title = await decryptText(taskData.titleEncrypted, encryptionKey);
+            taskData.description = await decryptText(taskData.descriptionEncrypted, encryptionKey);
+          }
+        } catch (decError) {
+          console.error("Decryption error:", decError);
+          taskData.title = "[Encrypted]";
+          taskData.description = "[Encrypted content - Unable to decrypt]";
+        }
+      }
+
       setTask(taskData);
     } catch (error) {
       console.error("Error loading task:", error);
@@ -199,7 +229,40 @@ export default function TaskDetails() {
       const response = await axios.get(`http://${IP}:5555/comments/task/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setComments(response.data);
+      
+      const commentsData = response.data;
+
+      // Decrypt comments if needed
+      const decryptedComments = await Promise.all(
+        commentsData.map(async (comment: any) => {
+          if (comment.contentEncrypted && !comment.content) {
+            try {
+              // Get task to find encryption key
+              const taskResponse = await axios.get(`http://${IP}:5555/task/${id}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              const taskData = taskResponse.data;
+              
+              if (taskData.assignedGroups && taskData.assignedGroups.length > 0) {
+                const groupId = taskData.assignedGroups[0]._id || taskData.assignedGroups[0];
+                const keyResponse = await axios.get(
+                  `http://${IP}:5555/group/${groupId}/encryption-key`,
+                  { headers: { Authorization: `Bearer ${token}` } }
+                );
+                
+                const encryptionKey = keyResponse.data.encryptionKey;
+                comment.content = await decryptText(comment.contentEncrypted, encryptionKey);
+              }
+            } catch (decError) {
+              console.error("Comment decryption error:", decError);
+              comment.content = "[Encrypted]";
+            }
+          }
+          return comment;
+        })
+      );
+
+      setComments(decryptedComments);
     } catch (error) {
       console.error("Error loading comments:", error);
     }
@@ -244,9 +307,30 @@ export default function TaskDetails() {
     try {
       setSendingComment(true);
       const token = await AsyncStorage.getItem("authToken");
+
+      const payload: any = {
+        taskId: id,
+        content: newComment,
+      };
+
+      if (task?.titleEncrypted && task?.assignedGroups && task.assignedGroups.length > 0) {
+        try {
+          const groupId = task.assignedGroups[0]._id || task.assignedGroups[0];
+          const keyResponse = await axios.get(
+            `http://${IP}:5555/group/${groupId}/encryption-key`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          
+          const encryptionKey = keyResponse.data.encryptionKey;
+          payload.contentEncrypted = await encryptText(newComment, encryptionKey);
+        } catch (encError) {
+          console.error("Comment encryption error:", encError);
+        }
+      }
+
       await axios.post(
         `http://${IP}:5555/comment/create`,
-        { taskId: id, content: newComment },
+        payload,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setNewComment("");

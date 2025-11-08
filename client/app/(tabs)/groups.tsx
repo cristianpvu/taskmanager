@@ -115,6 +115,27 @@ export default function Teams() {
     loadDepartmentGroup();
   };
 
+  const handleGenerateEncryptionKeys = async () => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      const response = await axios.post(
+        `http://${IP}:5555/admin/generate-all-group-keys`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      Alert.alert(
+        "Success", 
+        `Generated encryption keys for ${response.data.count} groups!`
+      );
+    } catch (error: any) {
+      console.error("Error generating keys:", error);
+      Alert.alert(
+        "Error", 
+        error.response?.data?.message || "Failed to generate encryption keys"
+      );
+    }
+  };
+
   const searchUsers = async (query: string) => {
     if (!query.trim()) {
       setSearchResults([]);
@@ -197,6 +218,20 @@ export default function Teams() {
         style={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />}
       >
+        {(user?.role === "CEO" || user?.role === "Admin") && (
+          <View style={styles.section}>
+            <TouchableOpacity 
+              style={styles.encryptionButton}
+              onPress={handleGenerateEncryptionKeys}
+            >
+              <Ionicons name="key" size={20} color={COLORS.white} />
+              <Text style={styles.encryptionButtonText}>
+                Generate Encryption Keys for All Groups
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Department Team</Text>
           {departmentGroup ? (
@@ -627,6 +662,22 @@ const styles = StyleSheet.create({
   createButtonText: {
     color: COLORS.white,
     fontSize: 16,
+    fontWeight: "600",
+  },
+  encryptionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#10B981",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  encryptionButtonText: {
+    color: COLORS.white,
+    fontSize: 15,
     fontWeight: "600",
   },
 });

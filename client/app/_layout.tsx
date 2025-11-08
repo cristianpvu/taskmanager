@@ -33,13 +33,14 @@ function RootLayoutNav() {
   }
 
   return (
-    <Stack>
-      <Stack.Screen name="selectauth" options={{ headerShown: false }} />
-      <Stack.Screen name="autentificareutilizator" options={{ headerShown: false }} />
-      <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="home" options={{ headerShown: false }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="taskdetails" options={{ headerShown: false }} />
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="selectauth" />
+      <Stack.Screen name="autentificareutilizator" />
+      <Stack.Screen name="login" />
+      <Stack.Screen name="home" />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="taskdetails" />
+      <Stack.Screen name="components/GroupDetail" />
     </Stack>
   );
 }
