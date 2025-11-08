@@ -2,27 +2,1154 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
+import jwt from "jsonwebtoken";
+import multer from "multer";
+import { v2 as cloudinary } from "cloudinary";
+import streamifier from "streamifier";
+import { User } from "./models/userModel.js";
+import { Group } from "./models/groupModel.js";
+import { Task } from "./models/taskModel.js";
+import { Comment } from "./models/commentModel.js";
+import { Conversation } from "./models/conversationModel.js";
+import { Message } from "./models/messageModel.js";
+import { Notification } from "./models/notificationModel.js";
 
 dotenv.config();
-
 const app = express();
 app.use(express.json());
 app.use(cors());
-
 const PORT = process.env.PORT || 5555;
 const mongoDBURL = process.env.MONGO_URL;
 
-app.get("/", (req, res) => {
-  res.send("Server is running!");
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-mongoose.connect(mongoDBURL)
-  .then(() => {
-    console.log("App connected to database");
-    app.listen(PORT, () => {
-      console.log(`App is listening on port ${PORT}`);
-    });
-  })
-  .catch((error) => {
-    console.log(error);
+const storage = multer.memoryStorage();
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 } 
+});
+
+const uploadToCloudinary = (buffer, folder) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      { folder: folder },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }
+    );
+    streamifier.createReadStream(buffer).pipe(uploadStream);
   });
+};
+
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ message: "No token provided" });
+  }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.userId = decoded.userId;
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: "Invalid token" });
+  }
+};
+
+const updateUserStats = async (userId) => {
+  const user = await User.findById(userId);
+  const tasksCompleted = await Task.countDocuments({
+    assignedTo: userId,
+    status: "Completed"
+  });
+  const tasksInProgress = await Task.countDocuments({
+    assignedTo: userId,
+    status: "In Progress"
+  });
+  const now = new Date();
+  const tasksOverdue = await Task.countDocuments({
+    assignedTo: userId,
+    status: { $nin: ["Completed", "Cancelled"] },
+    dueDate: { $lt: now }
+  });
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  let currentStreak = user.stats.currentStreak || 0;
+  if (user.stats.lastTaskCompletedDate) {
+    const lastCompletedDate = new Date(user.stats.lastTaskCompletedDate);
+    lastCompletedDate.setHours(0, 0, 0, 0);
+    if (lastCompletedDate.getTime() === today.getTime()) {
+    } else if (lastCompletedDate.getTime() === yesterday.getTime()) {
+      currentStreak += 1;
+    } else {
+      currentStreak = 1;
+    }
+  } else {
+    currentStreak = 1;
+  }
+  const longestStreak = Math.max(currentStreak, user.stats.longestStreak || 0);
+  user.stats = {
+    tasksCompleted,
+    tasksInProgress,
+    tasksOverdue,
+    currentStreak,
+    longestStreak,
+    lastTaskCompletedDate: new Date()
+  };
+  await user.save();
+};
+app.post("/auth/register", async (req, res) => {
+  try {
+    const { email, password, firstName, lastName, role, department } = req.body;
+    if (!email || !password || !firstName || !lastName || !role || !department) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: "Email already in use" });
+    }
+    const user = await User.create({
+      email,
+      password,
+      firstName,
+      lastName,
+      role,
+      department
+    });
+    const token = jwt.sign(
+      { userId: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: "30d" }
+    );
+    const userResponse = user.toObject();
+    delete userResponse.password;
+    return res.status(201).json({
+      message: "User registered successfully",
+      token,
+      user: userResponse
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: "Invalid password" });
+    }
+    user.lastSeen = new Date();
+    await user.save();
+    const token = jwt.sign(
+      { userId: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: "30d" }
+    );
+    const userResponse = user.toObject();
+    delete userResponse.password;
+    return res.status(200).json({
+      message: "Login successful",
+      token,
+      user: userResponse
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/user/:id", verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .select("-password")
+      .populate("groups", "name department");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    return res.status(200).json(user);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.put("/user/:id", verifyToken, async (req, res) => {
+  try {
+    const { firstName, lastName, status, bio, phoneNumber, department } = req.body;
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { firstName, lastName, status, bio, phoneNumber, department },
+      { new: true }
+    ).select("-password");
+    return res.status(200).json({
+      message: "Profile updated successfully",
+      user
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/user/:id/upload-photo", verifyToken, upload.single("photo"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+    const result = await uploadToCloudinary(req.file.buffer, "task-management/profiles");
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { profilePhoto: result.secure_url },
+      { new: true }
+    ).select("-password");
+    return res.status(200).json({
+      message: "Profile photo uploaded successfully",
+      user
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/user/:id/stats", verifyToken, async (req, res) => {
+  try {
+    await updateUserStats(req.params.id);
+    const user = await User.findById(req.params.id).select("stats");
+    return res.status(200).json(user.stats);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/users/search", verifyToken, async (req, res) => {
+  try {
+    const { query, department, role } = req.query;
+    let searchQuery = {};
+    if (query) {
+      searchQuery.$or = [
+        { firstName: { $regex: query, $options: "i" } },
+        { lastName: { $regex: query, $options: "i" } },
+        { email: { $regex: query, $options: "i" } }
+      ];
+    }
+    if (department) {
+      searchQuery.department = department;
+    }
+    if (role) {
+      searchQuery.role = role;
+    }
+    const users = await User.find(searchQuery)
+      .select("-password")
+      .limit(20);
+    return res.status(200).json(users);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/group/create", verifyToken, async (req, res) => {
+  try {
+    const { name, description, department, members, leader } = req.body;
+    const group = await Group.create({
+      name,
+      description,
+      department,
+      members,
+      leader,
+      createdBy: req.userId
+    });
+    await User.updateMany(
+      { _id: { $in: members } },
+      { $push: { groups: group._id } }
+    );
+    const populatedGroup = await Group.findById(group._id)
+      .populate("members", "firstName lastName profilePhoto role")
+      .populate("leader", "firstName lastName profilePhoto role");
+    return res.status(201).json({
+      message: "Group created successfully",
+      group: populatedGroup
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/groups", verifyToken, async (req, res) => {
+  try {
+    const { department } = req.query;
+    let query = { isActive: true };
+    if (department) {
+      query.department = department;
+    }
+    const groups = await Group.find(query)
+      .populate("members", "firstName lastName profilePhoto role")
+      .populate("leader", "firstName lastName profilePhoto role")
+      .sort({ createdAt: -1 });
+    return res.status(200).json(groups);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/group/:id", verifyToken, async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id)
+      .populate("members", "firstName lastName profilePhoto role department")
+      .populate("leader", "firstName lastName profilePhoto role")
+      .populate("createdBy", "firstName lastName");
+    if (!group) {
+      return res.status(404).json({ message: "Group not found" });
+    }
+    return res.status(200).json(group);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/group/:id/add-member", verifyToken, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const group = await Group.findByIdAndUpdate(
+      req.params.id,
+      { $addToSet: { members: userId } },
+      { new: true }
+    ).populate("members", "firstName lastName profilePhoto role");
+    await User.findByIdAndUpdate(userId, {
+      $addToSet: { groups: req.params.id }
+    });
+    await Notification.create({
+      recipient: userId,
+      sender: req.userId,
+      type: "group_added",
+      message: `You have been added to group: ${group.name}`
+    });
+    return res.status(200).json({
+      message: "Member added successfully",
+      group
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/group/:id/remove-member", verifyToken, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const group = await Group.findByIdAndUpdate(
+      req.params.id,
+      { $pull: { members: userId } },
+      { new: true }
+    );
+    await User.findByIdAndUpdate(userId, {
+      $pull: { groups: req.params.id }
+    });
+    return res.status(200).json({
+      message: "Member removed successfully",
+      group
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/task/create", verifyToken, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      status,
+      priority,
+      color,
+      department,
+      assignedTo,
+      assignedGroups,
+      dueDate,
+      startDate,
+      parentTask,
+      isOpenForClaims,
+      tags
+    } = req.body;
+    const task = await Task.create({
+      title,
+      description,
+      status: status || "Open",
+      priority: priority || "Medium",
+      color: color || "#3B82F6",
+      department,
+      createdBy: req.userId,
+      assignedTo: assignedTo || [],
+      assignedGroups: assignedGroups || [],
+      dueDate,
+      startDate: startDate || new Date(),
+      parentTask: parentTask || null,
+      isOpenForClaims: isOpenForClaims || false,
+      tags: tags || []
+    });
+    if (parentTask) {
+      await Task.findByIdAndUpdate(parentTask, {
+        $push: { subtasks: task._id }
+      });
+    }
+    if (assignedTo && assignedTo.length > 0) {
+      for (const userId of assignedTo) {
+        if (userId !== req.userId) {
+          await Notification.create({
+            recipient: userId,
+            sender: req.userId,
+            type: "task_assigned",
+            task: task._id,
+            message: `You have been assigned to task: ${title}`
+          });
+        }
+      }
+    }
+    const populatedTask = await Task.findById(task._id)
+      .populate("createdBy", "firstName lastName profilePhoto role")
+      .populate("assignedTo", "firstName lastName profilePhoto role department")
+      .populate("assignedGroups", "name department");
+    return res.status(201).json({
+      message: "Task created successfully",
+      task: populatedTask
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/tasks/feed", verifyToken, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const user = await User.findById(req.userId);
+    const tasks = await Task.find({
+      isOpenForClaims: true,
+      isClaimed: false,
+      department: user.department,
+      isArchived: false,
+      status: { $nin: ["Completed", "Cancelled"] }
+    })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate("createdBy", "firstName lastName profilePhoto role")
+      .populate("assignedTo", "firstName lastName profilePhoto")
+      .populate("assignedGroups", "name");
+    return res.status(200).json({
+      tasks,
+      page,
+      hasMore: tasks.length === limit
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/tasks/user/:userId", verifyToken, async (req, res) => {
+  try {
+    const { status, priority } = req.query;
+    let query = {
+      assignedTo: req.params.userId,
+      isArchived: false,
+      parentTask: null 
+    };
+    if (status) {
+      query.status = status;
+    }
+    if (priority) {
+      query.priority = priority;
+    }
+    const tasks = await Task.find(query)
+      .sort({ dueDate: 1 })
+      .populate("createdBy", "firstName lastName profilePhoto role")
+      .populate("assignedTo", "firstName lastName profilePhoto role")
+      .populate("assignedGroups", "name department")
+      .populate({
+        path: "subtasks",
+        populate: {
+          path: "assignedTo",
+          select: "firstName lastName profilePhoto"
+        }
+      });
+    return res.status(200).json(tasks);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/tasks/created-by/:userId", verifyToken, async (req, res) => {
+  try {
+    const tasks = await Task.find({
+      createdBy: req.params.userId,
+      isArchived: false,
+      parentTask: null
+    })
+      .sort({ createdAt: -1 })
+      .populate("assignedTo", "firstName lastName profilePhoto role")
+      .populate("assignedGroups", "name department")
+      .populate({
+        path: "subtasks",
+        populate: {
+          path: "assignedTo",
+          select: "firstName lastName profilePhoto"
+        }
+      });
+    return res.status(200).json(tasks);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/task/:id", verifyToken, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id)
+      .populate("createdBy", "firstName lastName profilePhoto role department")
+      .populate("assignedTo", "firstName lastName profilePhoto role department")
+      .populate("assignedGroups", "name department members")
+      .populate("parentTask", "title status")
+      .populate({
+        path: "subtasks",
+        populate: [
+          { path: "assignedTo", select: "firstName lastName profilePhoto role" },
+          { path: "createdBy", select: "firstName lastName profilePhoto" }
+        ]
+      })
+      .populate("claimedBy", "firstName lastName profilePhoto")
+      .populate("invitations.user", "firstName lastName profilePhoto role")
+      .populate("invitations.invitedBy", "firstName lastName profilePhoto")
+      .populate("attachments.uploadedBy", "firstName lastName profilePhoto");
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+    return res.status(200).json(task);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.put("/task/:id", verifyToken, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      status,
+      priority,
+      color,
+      dueDate,
+      progressPercentage,
+      tags
+    } = req.body;
+    const updateData = {};
+    if (title) updateData.title = title;
+    if (description) updateData.description = description;
+    if (status) updateData.status = status;
+    if (priority) updateData.priority = priority;
+    if (color) updateData.color = color;
+    if (dueDate) updateData.dueDate = dueDate;
+    if (progressPercentage !== undefined) updateData.progressPercentage = progressPercentage;
+    if (tags) updateData.tags = tags;
+    if (status === "Completed") {
+      updateData.completedDate = new Date();
+      const task = await Task.findById(req.params.id);
+      for (const userId of task.assignedTo) {
+        await updateUserStats(userId);
+      }
+    }
+    const task = await Task.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true }
+    )
+      .populate("createdBy", "firstName lastName profilePhoto")
+      .populate("assignedTo", "firstName lastName profilePhoto role")
+      .populate("assignedGroups", "name");
+    return res.status(200).json({
+      message: "Task updated successfully",
+      task
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/task/:id/assign", verifyToken, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const task = await Task.findByIdAndUpdate(
+      req.params.id,
+      { $addToSet: { assignedTo: userId } },
+      { new: true }
+    ).populate("assignedTo", "firstName lastName profilePhoto role");
+    await Notification.create({
+      recipient: userId,
+      sender: req.userId,
+      type: "task_assigned",
+      task: task._id,
+      message: `You have been assigned to task: ${task.title}`
+    });
+    return res.status(200).json({
+      message: "User assigned to task",
+      task
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/task/:id/unassign", verifyToken, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const task = await Task.findByIdAndUpdate(
+      req.params.id,
+      { $pull: { assignedTo: userId } },
+      { new: true }
+    );
+    return res.status(200).json({
+      message: "User removed from task",
+      task
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/task/:id/claim", verifyToken, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    if (!task.isOpenForClaims) {
+      return res.status(400).json({ message: "This task is not open for claims" });
+    }
+    if (task.isClaimed) {
+      return res.status(400).json({ message: "This task has already been claimed" });
+    }
+    task.isClaimed = true;
+    task.claimedBy = req.userId;
+    task.claimedAt = new Date();
+    task.assignedTo.push(req.userId);
+    await task.save();
+    await Notification.create({
+      recipient: task.createdBy,
+      sender: req.userId,
+      type: "task_assigned",
+      task: task._id,
+      message: `claimed your task: ${task.title}`
+    });
+    return res.status(200).json({
+      message: "Task claimed successfully",
+      task
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/task/:id/invite", verifyToken, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const task = await Task.findById(req.params.id);
+    const alreadyInvited = task.invitations.some(
+      inv => inv.user.toString() === userId && inv.status === "Pending"
+    );
+    if (alreadyInvited) {
+      return res.status(400).json({ message: "User already has a pending invitation" });
+    }
+    task.invitations.push({
+      user: userId,
+      invitedBy: req.userId,
+      status: "Pending"
+    });
+    await task.save();
+    await Notification.create({
+      recipient: userId,
+      sender: req.userId,
+      type: "task_invitation",
+      task: task._id,
+      message: `invited you to help with task: ${task.title}`
+    });
+    return res.status(200).json({
+      message: "Invitation sent successfully"
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/task/:id/invitation-response", verifyToken, async (req, res) => {
+  try {
+    const { accept } = req.body; 
+    const task = await Task.findById(req.params.id);
+    const invitation = task.invitations.find(
+      inv => inv.user.toString() === req.userId && inv.status === "Pending"
+    );
+    if (!invitation) {
+      return res.status(404).json({ message: "Invitation not found" });
+    }
+    invitation.status = accept ? "Accepted" : "Declined";
+    invitation.respondedAt = new Date();
+    if (accept) {
+      if (!task.assignedTo.includes(req.userId)) {
+        task.assignedTo.push(req.userId);
+      }
+    }
+    await task.save();
+    return res.status(200).json({
+      message: accept ? "Invitation accepted" : "Invitation declined",
+      task
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/task/:id/upload", verifyToken, upload.array("files", 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: "No files uploaded" });
+    }
+    const task = await Task.findById(req.params.id);
+    for (const file of req.files) {
+      const result = await uploadToCloudinary(file.buffer, "task-management/attachments");
+      task.attachments.push({
+        url: result.secure_url,
+        publicId: result.public_id,
+        fileName: file.originalname,
+        uploadedBy: req.userId
+      });
+    }
+    await task.save();
+    return res.status(200).json({
+      message: "Files uploaded successfully",
+      attachments: task.attachments
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.delete("/task/:taskId/attachment/:attachmentId", verifyToken, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.taskId);
+    const attachment = task.attachments.id(req.params.attachmentId);
+    if (attachment) {
+      await cloudinary.uploader.destroy(attachment.publicId);
+      attachment.remove();
+      await task.save();
+    }
+    return res.status(200).json({ message: "Attachment deleted successfully" });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.put("/task/:id/archive", verifyToken, async (req, res) => {
+  try {
+    const task = await Task.findByIdAndUpdate(
+      req.params.id,
+      { isArchived: true },
+      { new: true }
+    );
+    return res.status(200).json({
+      message: "Task archived successfully",
+      task
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.delete("/task/:id", verifyToken, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    const deleteSubtasks = async (taskId) => {
+      const task = await Task.findById(taskId);
+      if (task && task.subtasks.length > 0) {
+        for (const subtaskId of task.subtasks) {
+          await deleteSubtasks(subtaskId);
+        }
+      }
+      await Task.findByIdAndDelete(taskId);
+      await Comment.deleteMany({ task: taskId });
+    };
+    await deleteSubtasks(req.params.id);
+    return res.status(200).json({ message: "Task and all subtasks deleted successfully" });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/task/:id/subtasks", verifyToken, async (req, res) => {
+  try {
+    const subtasks = await Task.find({ parentTask: req.params.id })
+      .populate("createdBy", "firstName lastName profilePhoto")
+      .populate("assignedTo", "firstName lastName profilePhoto role")
+      .sort({ createdAt: -1 });
+    return res.status(200).json(subtasks);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/comment/create", verifyToken, async (req, res) => {
+  try {
+    const { taskId, content, parentComment } = req.body;
+    const comment = await Comment.create({
+      task: taskId,
+      author: req.userId,
+      content,
+      parentComment: parentComment || null
+    });
+    const populatedComment = await Comment.findById(comment._id)
+      .populate("author", "firstName lastName profilePhoto role");
+    const task = await Task.findById(taskId);
+    const recipients = new Set([
+      task.createdBy.toString(),
+      ...task.assignedTo.map(id => id.toString())
+    ]);
+    recipients.delete(req.userId);
+    for (const recipientId of recipients) {
+      await Notification.create({
+        recipient: recipientId,
+        sender: req.userId,
+        type: "task_comment",
+        task: taskId,
+        comment: comment._id,
+        message: `commented on task: ${task.title}`
+      });
+    }
+    return res.status(201).json({
+      message: "Comment created successfully",
+      comment: populatedComment
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/comments/task/:taskId", verifyToken, async (req, res) => {
+  try {
+    const comments = await Comment.find({
+      task: req.params.taskId,
+      parentComment: null
+    })
+      .sort({ createdAt: -1 })
+      .populate("author", "firstName lastName profilePhoto role");
+    return res.status(200).json(comments);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/comment/:commentId/replies", verifyToken, async (req, res) => {
+  try {
+    const replies = await Comment.find({ parentComment: req.params.commentId })
+      .sort({ createdAt: 1 })
+      .populate("author", "firstName lastName profilePhoto role");
+    return res.status(200).json(replies);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.put("/comment/:id", verifyToken, async (req, res) => {
+  try {
+    const { content } = req.body;
+    const comment = await Comment.findByIdAndUpdate(
+      req.params.id,
+      {
+        content,
+        isEdited: true,
+        editedAt: new Date()
+      },
+      { new: true }
+    ).populate("author", "firstName lastName profilePhoto");
+    return res.status(200).json({
+      message: "Comment updated successfully",
+      comment
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.delete("/comment/:id", verifyToken, async (req, res) => {
+  try {
+    await Comment.deleteMany({ parentComment: req.params.id });
+    await Comment.findByIdAndDelete(req.params.id);
+    return res.status(200).json({ message: "Comment deleted successfully" });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/conversation/create", verifyToken, async (req, res) => {
+  try {
+    const { participants, isGroupChat, groupName } = req.body;
+    if (!isGroupChat && participants.length === 2) {
+      const existingConversation = await Conversation.findOne({
+        isGroupChat: false,
+        participants: { $all: participants }
+      })
+        .populate("participants", "firstName lastName profilePhoto lastSeen")
+        .populate("lastMessage");
+      if (existingConversation) {
+        return res.status(200).json(existingConversation);
+      }
+    }
+    const conversation = await Conversation.create({
+      participants,
+      isGroupChat: isGroupChat || false,
+      groupName: groupName || null,
+      admin: isGroupChat ? req.userId : null
+    });
+    const populatedConversation = await Conversation.findById(conversation._id)
+      .populate("participants", "firstName lastName profilePhoto lastSeen")
+      .populate("admin", "firstName lastName");
+    return res.status(201).json({
+      message: "Conversation created successfully",
+      conversation: populatedConversation
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/conversations/user/:userId", verifyToken, async (req, res) => {
+  try {
+    const conversations = await Conversation.find({
+      participants: req.params.userId
+    })
+      .sort({ lastMessageTime: -1 })
+      .populate("participants", "firstName lastName profilePhoto lastSeen")
+      .populate("lastMessage")
+      .populate("admin", "firstName lastName");
+    return res.status(200).json(conversations);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.post("/message/send", verifyToken, upload.single("media"), async (req, res) => {
+  try {
+    const { conversationId, content } = req.body;
+    let mediaUrl = null;
+    let mediaType = null;
+    if (req.file) {
+      const result = await uploadToCloudinary(req.file.buffer, "task-management/messages");
+      mediaUrl = result.secure_url;
+      mediaType = req.file.mimetype.startsWith("video/") ? "video" :
+                  req.file.mimetype.startsWith("image/") ? "image" : "file";
+    }
+    const message = await Message.create({
+      conversation: conversationId,
+      sender: req.userId,
+      content: content || null,
+      mediaUrl,
+      mediaType,
+      readBy: [{
+        user: req.userId,
+        readAt: new Date()
+      }]
+    });
+    const populatedMessage = await Message.findById(message._id)
+      .populate("sender", "firstName lastName profilePhoto");
+    await Conversation.findByIdAndUpdate(conversationId, {
+      lastMessage: message._id,
+      lastMessageTime: new Date()
+    });
+    const conversation = await Conversation.findById(conversationId);
+    const otherParticipants = conversation.participants.filter(
+      p => p.toString() !== req.userId
+    );
+    for (const participant of otherParticipants) {
+      await Notification.create({
+        recipient: participant,
+        sender: req.userId,
+        type: "message",
+        message: "sent you a message"
+      });
+    }
+    return res.status(201).json({
+      message: "Message sent successfully",
+      messageData: populatedMessage
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/messages/conversation/:conversationId", verifyToken, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+    const messages = await Message.find({
+      conversation: req.params.conversationId,
+      isDeleted: false
+    })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate("sender", "firstName lastName profilePhoto");
+    return res.status(200).json({
+      messages: messages.reverse(),
+      page,
+      hasMore: messages.length === limit
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.put("/message/:id/read", verifyToken, async (req, res) => {
+  try {
+    const message = await Message.findById(req.params.id);
+    const alreadyRead = message.readBy.some(
+      r => r.user.toString() === req.userId
+    );
+    if (!alreadyRead) {
+      message.readBy.push({
+        user: req.userId,
+        readAt: new Date()
+      });
+      await message.save();
+    }
+    return res.status(200).json({ message: "Message marked as read" });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.delete("/message/:id", verifyToken, async (req, res) => {
+  try {
+    await Message.findByIdAndUpdate(req.params.id, { isDeleted: true });
+    return res.status(200).json({ message: "Message deleted successfully" });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/notifications/user/:userId", verifyToken, async (req, res) => {
+  try {
+    const notifications = await Notification.find({ recipient: req.params.userId })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .populate("sender", "firstName lastName profilePhoto")
+      .populate("task", "title")
+      .populate("comment", "content");
+    return res.status(200).json(notifications);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.put("/notification/:id/read", verifyToken, async (req, res) => {
+  try {
+    await Notification.findByIdAndUpdate(req.params.id, {
+      isRead: true,
+      readAt: new Date()
+    });
+    return res.status(200).json({ message: "Notification marked as read" });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.put("/notifications/user/:userId/read-all", verifyToken, async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { recipient: req.params.userId, isRead: false },
+      { isRead: true, readAt: new Date() }
+    );
+    return res.status(200).json({ message: "All notifications marked as read" });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/notifications/user/:userId/unread-count", verifyToken, async (req, res) => {
+  try {
+    const count = await Notification.countDocuments({
+      recipient: req.params.userId,
+      isRead: false
+    });
+    return res.status(200).json({ count });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/dashboard/:userId", verifyToken, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const tasksByStatus = await Task.aggregate([
+      {
+        $match: {
+          assignedTo: new mongoose.Types.ObjectId(userId),
+          isArchived: false
+        }
+      },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    const overdueTasks = await Task.countDocuments({
+      assignedTo: userId,
+      status: { $nin: ["Completed", "Cancelled"] },
+      dueDate: { $lt: new Date() },
+      isArchived: false
+    });
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tasksDueToday = await Task.countDocuments({
+      assignedTo: userId,
+      status: { $nin: ["Completed", "Cancelled"] },
+      dueDate: { $gte: today, $lt: tomorrow },
+      isArchived: false
+    });
+    await updateUserStats(userId);
+    const user = await User.findById(userId).select("stats");
+    const recentTasks = await Task.find({
+      $or: [
+        { createdBy: userId },
+        { assignedTo: userId }
+      ],
+      isArchived: false
+    })
+      .sort({ updatedAt: -1 })
+      .limit(5)
+      .populate("createdBy", "firstName lastName")
+      .populate("assignedTo", "firstName lastName");
+    return res.status(200).json({
+      tasksByStatus,
+      overdueTasks,
+      tasksDueToday,
+      stats: user.stats,
+      recentTasks
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+mongoose.connect(mongoDBURL).then(() => {
+  console.log("App connected to database");
+  app.listen(PORT, () => {
+    console.log(`App is listening on port ${PORT}`);
+  });
+}).catch((error) => {
+  console.log(error);
+});
