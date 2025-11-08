@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Text, View, SafeAreaView, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
+import { Text, View, SafeAreaView, TouchableOpacity, ScrollView, StyleSheet, StatusBar, Platform } from "react-native";
 import { useAuth } from "@/context/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -68,6 +68,7 @@ export default function Home() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>TaskManager</Text>
@@ -160,6 +161,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   header: {
     flexDirection: "row",
