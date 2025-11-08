@@ -15,7 +15,6 @@ const COLORS = {
     border: "#E2E8F0",
 };
 
-// Roles that can access the Messages/Admin Dashboard
 const ADMIN_ROLES = ['CEO', 'Project Manager', 'Team Lead'];
 
 export default function TabsLayout() {
@@ -27,14 +26,12 @@ export default function TabsLayout() {
 
     const isActive = (path: string) => pathname === path;
 
-    // Check if user has admin access
     const hasAdminAccess = user && ADMIN_ROLES.includes(user.role);
 
     return (
         <SafeAreaView style={styles.safeArea}>
             <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
 
-            {/* Header */}
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>TaskManager</Text>
                 <View style={styles.headerRight}>
@@ -68,7 +65,6 @@ export default function TabsLayout() {
                 onClose={() => setShowNotifications(false)}
             />
 
-            {/* Content */}
             <Tabs
                 screenOptions={{
                     headerShown: false,
@@ -82,7 +78,6 @@ export default function TabsLayout() {
                 <Tabs.Screen name="profile" />
             </Tabs>
 
-            {/* Bottom Navigation */}
             <View style={styles.bottomNav}>
                 <TouchableOpacity
                     style={styles.navItem}
@@ -123,7 +118,6 @@ export default function TabsLayout() {
                     <Text style={[styles.navText, isActive("/mytasks") && styles.navTextActive]}>My Tasks</Text>
                 </TouchableOpacity>
 
-                {/* Only show Dashboard tab for admin roles */}
                 {hasAdminAccess && (
                     <TouchableOpacity
                         style={styles.navItem}

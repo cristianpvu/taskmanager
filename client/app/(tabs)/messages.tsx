@@ -42,11 +42,9 @@ export default function AdminDashboard() {
             const token = await AsyncStorage.getItem('authToken');
             const headers = { Authorization: `Bearer ${token}` };
 
-            // Fetch tasks from different endpoints and combine them
             let allTasks = [];
 
             try {
-                // Try to get user's tasks
                 const userTasksResponse = await axios.get(`${API_URL}/tasks/user/${currentUser?._id}`, { headers });
                 allTasks = [...userTasksResponse.data];
             } catch (error) {
@@ -54,11 +52,9 @@ export default function AdminDashboard() {
             }
 
             try {
-                // Try to get created tasks
                 const createdTasksResponse = await axios.get(`${API_URL}/tasks/created-by/${currentUser?._id}`, { headers });
                 const createdTasks = createdTasksResponse.data;
 
-                // Add created tasks that aren't already in the list
                 createdTasks.forEach(task => {
                     if (!allTasks.find(t => t._id === task._id)) {
                         allTasks.push(task);
@@ -69,11 +65,9 @@ export default function AdminDashboard() {
             }
 
             try {
-                // Try to get feed tasks
                 const feedResponse = await axios.get(`${API_URL}/tasks/feed`, { headers });
                 const feedTasks = feedResponse.data.tasks || feedResponse.data;
 
-                // Add feed tasks that aren't already in the list
                 feedTasks.forEach(task => {
                     if (!allTasks.find(t => t._id === task._id)) {
                         allTasks.push(task);
@@ -83,16 +77,13 @@ export default function AdminDashboard() {
                 console.log("Could not fetch feed tasks");
             }
 
-            // Fetch all groups
             const groupsResponse = await axios.get(`${API_URL}/groups`, { headers });
             const allGroups = groupsResponse.data;
 
-            // Fetch users by searching (get all users with empty query)
             const usersResponse = await axios.get(`${API_URL}/users/search?query=`, { headers });
             const users = usersResponse.data;
             setAllUsers(users);
 
-            // Calculate stats
             const now = new Date();
             const tasksByStatus = {
                 total: allTasks.length,
@@ -115,7 +106,6 @@ export default function AdminDashboard() {
                 low: allTasks.filter(t => t.priority === 'Low').length,
             };
 
-            // Department statistics
             const deptStats = {};
             allTasks.forEach(task => {
                 if (task.department) {
@@ -157,13 +147,11 @@ export default function AdminDashboard() {
                 lowPriorityTasks: tasksByPriority.low,
             });
 
-            // Get recent tasks
             const sortedTasks = [...allTasks]
                 .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
                 .slice(0, 10);
             setRecentTasks(sortedTasks);
 
-            // Build activity feed from tasks
             const activities = [];
             sortedTasks.forEach(task => {
                 if (task.activityLog && task.activityLog.length > 0) {
@@ -189,7 +177,6 @@ export default function AdminDashboard() {
         }
     };
 
-    // Refresh data when screen comes into focus
     useFocusEffect(
         useCallback(() => {
             fetchDashboardData();
@@ -205,7 +192,6 @@ export default function AdminDashboard() {
         fetchDashboardData();
     };
 
-    // THIS IS THE KEY FUNCTION - Navigate to user profile
     const navigateToUserProfile = (userId) => {
         router.push(`/userprofiles?userId=${userId}` as any);5
     };
@@ -451,7 +437,6 @@ export default function AdminDashboard() {
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
                 }
             >
-                {/* Primary Stats */}
                 <View style={styles.statsRow}>
                     <StatCard
                         title="Total Tasks"
@@ -490,7 +475,6 @@ export default function AdminDashboard() {
                     />
                 </View>
 
-                {/* Priority Stats */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Priority Distribution</Text>
                     <View style={styles.priorityGrid}>
@@ -517,7 +501,6 @@ export default function AdminDashboard() {
                     </View>
                 </View>
 
-                {/* System Stats */}
                 <View style={styles.metricsContainer}>
                     <View style={styles.metricCard}>
                         <View style={styles.metricHeader}>
@@ -542,7 +525,6 @@ export default function AdminDashboard() {
                     </View>
                 </View>
 
-                {/* All Users Section - CLICK ON ANY USER TO GO TO THEIR PROFILE */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Text style={styles.sectionTitle}>All Users ({allUsers.length})</Text>
@@ -557,7 +539,6 @@ export default function AdminDashboard() {
                     )}
                 </View>
 
-                {/* Department Statistics */}
                 {departmentStats.length > 0 && (
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Department Statistics</Text>
@@ -567,7 +548,6 @@ export default function AdminDashboard() {
                     </View>
                 )}
 
-                {/* Recent Tasks */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Text style={styles.sectionTitle}>Recent Tasks</Text>
@@ -581,7 +561,6 @@ export default function AdminDashboard() {
                     )}
                 </View>
 
-                {/* Recent Activity */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Recent Activity</Text>
                     <View style={styles.activityContainer}>

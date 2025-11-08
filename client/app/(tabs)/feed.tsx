@@ -42,7 +42,6 @@ const PRIORITY_COLORS = {
   Urgent: "#EF4444",
 };
 
-// Roles that can create tasks
 const AUTHORIZED_ROLES = ["CEO", "Project Manager", "Team Lead"];
 
 interface User {
@@ -137,7 +136,6 @@ export default function Feed() {
   const [groupSearchResults, setGroupSearchResults] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Check if user can create tasks
   const canCreateTasks = AUTHORIZED_ROLES.includes(user?.role || "");
 
   useEffect(() => {
@@ -150,7 +148,6 @@ export default function Feed() {
       const response = await axios.get(`http://${IP}:5555/tasks/feed`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      // Initialize checklist for old tasks that don't have it
       const tasksData = response.data.tasks.map((task: Task) => ({
         ...task,
         checklist: task.checklist || [],
@@ -190,7 +187,6 @@ export default function Feed() {
         params: { query, department: user?.department },
       });
       
-      // Filter users based on role hierarchy
       const filtered = response.data.filter(
         (u: User) => u._id !== user?._id && 
                     !selectedUsers.find((m) => m._id === u._id) &&
@@ -312,13 +308,11 @@ export default function Feed() {
         payload.assignedGroups = selectedGroups.map((g) => g._id);
         payload.assignedTo = [];
 
-        // Encrypt data for group tasks
         if (selectedGroups.length > 0) {
           try {
             console.log('🔐 Starting encryption for group task...');
             console.log('Selected groups:', selectedGroups);
             
-            // Get encryption key for the first group
             const groupId = selectedGroups[0]._id;
             console.log('Getting encryption key for group:', groupId);
             
@@ -330,7 +324,6 @@ export default function Feed() {
             const encryptionKey = keyResponse.data.encryptionKey;
             console.log('✓ Got encryption key:', encryptionKey?.substring(0, 20) + '...');
             
-            // Encrypt title and description
             console.log('Encrypting title and description...');
             payload.titleEncrypted = await encryptText(title, encryptionKey);
             payload.descriptionEncrypted = await encryptText(description, encryptionKey);
@@ -340,7 +333,6 @@ export default function Feed() {
             console.error("❌ Encryption error:", encError);
             console.error("Error details:", encError.response?.data || encError.message);
             
-            // Check if it's a missing encryption key error
             if (encError.response?.status === 403 || encError.response?.status === 404) {
               Alert.alert(
                 "Encryption Key Missing",
@@ -348,9 +340,8 @@ export default function Feed() {
                 [{ text: "OK" }]
               );
               setLoading(false);
-              return; // Stop task creation
+              return;
             }
-            // If encryption fails for other reasons, continue without encryption
           }
         } else {
           console.log('⚠️ No groups selected, skipping encryption');
@@ -368,11 +359,10 @@ export default function Feed() {
       Alert.alert("Success", "Task created successfully!");
       resetForm();
       setShowCreateModal(false);
-      loadTasks(); // Reload tasks after creation
+      loadTasks();
     } catch (error: any) {
       console.error("Error creating task:", error);
       
-      // HANDLE THE MISSING ENCRYPTION KEY ERROR ⬇️
       if (error.response?.data?.missingKeys) {
         Alert.alert(
           "Encryption Keys Missing",
@@ -465,7 +455,6 @@ export default function Feed() {
                 }}
                 activeOpacity={0.7}
               >
-                {/* Task Header */}
                 <View style={styles.taskHeader}>
                   <View style={styles.taskHeaderLeft}>
                     <View
@@ -486,13 +475,11 @@ export default function Feed() {
                   <Text style={styles.taskDueDate}>{formatDate(task.dueDate)}</Text>
                 </View>
 
-                {/* Task Title & Description */}
                 <Text style={styles.taskTitle}>{task.title}</Text>
                 <Text style={styles.taskDescription} numberOfLines={2}>
                   {task.description}
                 </Text>
 
-                {/* Tags */}
                 {task.tags.length > 0 && (
                   <View style={styles.tagsContainer}>
                     {task.tags.slice(0, 3).map((tag, index) => (
@@ -538,7 +525,6 @@ export default function Feed() {
         )}
       </ScrollView>
 
-      {/* Only show FAB for authorized roles */}
       {canCreateTasks && (
         <TouchableOpacity style={styles.fab} onPress={handleAddTask}>
           <Ionicons name="add" size={28} color={COLORS.white} />
@@ -670,7 +656,6 @@ export default function Feed() {
                 />
               )}
 
-              {/* Tags */}
               <Text style={styles.label}>Tags (comma separated)</Text>
               <TextInput
                 style={styles.input}
@@ -680,7 +665,6 @@ export default function Feed() {
                 placeholderTextColor={COLORS.textLight}
               />
 
-              {/* Assignment Type */}
               <Text style={styles.label}>Assignment</Text>
               <View style={styles.assignmentTypeContainer}>
                 <TouchableOpacity
@@ -750,7 +734,6 @@ export default function Feed() {
                 </TouchableOpacity>
               </View>
 
-              {/* Teams Selection */}
               {assignmentType === "teams" && (
                 <View style={styles.selectionContainer}>
                   <Text style={styles.label}>Select Teams</Text>
@@ -853,7 +836,6 @@ export default function Feed() {
                 </View>
               )}
 
-              {/* Checklist */}
               <Text style={styles.label}>Checklist (optional)</Text>
               <View style={styles.checklistContainer}>
                 <View style={styles.addChecklistItemContainer}>

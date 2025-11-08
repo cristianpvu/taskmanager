@@ -58,11 +58,9 @@ export default function Teams() {
     loadDepartmentGroup();
   }, []);
 
-  // Handle return from task details
   useEffect(() => {
     if (params.returnToGroup && typeof params.returnToGroup === 'string') {
       setSelectedGroup(params.returnToGroup);
-      // Clear the param to prevent reopening on subsequent renders
       router.setParams({ returnToGroup: undefined });
     }
   }, [params.returnToGroup]);
@@ -105,7 +103,6 @@ export default function Teams() {
       setDepartmentGroup(response.data);
     } catch (error) {
       console.error("Error loading department group:", error);
-      // Department group might not exist yet, this is okay
     }
   };
 
