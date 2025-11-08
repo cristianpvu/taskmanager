@@ -22,7 +22,7 @@
     "@react-navigation/native": "^6.0.2",
     "axios": "^1.7.2",
     "eas-cli": "^12.6.2",
-    "expo": "^51.0.8",
+    "expo": "^51.0.39",
     "expo-constants": "~16.0.1",
     "expo-dev-client": "~4.0.28",
     "expo-device": "~6.0.2",
