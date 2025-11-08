@@ -78,6 +78,7 @@ interface Task {
   tags: string[];
   isOpenForClaims: boolean;
   isClaimed: boolean;
+  checklist?: any[];
 }
 
 export default function Feed() {
@@ -100,6 +101,8 @@ export default function Feed() {
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [tags, setTags] = useState("");
   const [color, setColor] = useState("#3B82F6");
+  const [checklistItems, setChecklistItems] = useState<string[]>([]);
+  const [newChecklistItem, setNewChecklistItem] = useState("");
   
   const [assignmentType, setAssignmentType] = useState<AssignmentType>("open");
   const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
@@ -120,7 +123,12 @@ export default function Feed() {
       const response = await axios.get(`http://${IP}:5555/tasks/feed`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setTasks(response.data.tasks);
+      // Initialize checklist for old tasks that don't have it
+      const tasksData = response.data.tasks.map((task: Task) => ({
+        ...task,
+        checklist: task.checklist || [],
+      }));
+      setTasks(tasksData);
     } catch (error) {
       console.error("Error loading tasks:", error);
     } finally {
@@ -197,6 +205,17 @@ export default function Feed() {
     }
   };
 
+  const handleAddChecklistItem = () => {
+    if (newChecklistItem.trim()) {
+      setChecklistItems([...checklistItems, newChecklistItem.trim()]);
+      setNewChecklistItem("");
+    }
+  };
+
+  const handleRemoveChecklistItem = (index: number) => {
+    setChecklistItems(checklistItems.filter((_, i) => i !== index));
+  };
+
   const resetForm = () => {
     setTitle("");
     setDescription("");
@@ -210,6 +229,8 @@ export default function Feed() {
     setSelectedGroups([]);
     setUserSearchQuery("");
     setUserSearchResults([]);
+    setChecklistItems([]);
+    setNewChecklistItem("");
   };
 
   const formatDateDisplay = (date: Date) => {
@@ -241,6 +262,11 @@ export default function Feed() {
         dueDate: dueDate.toISOString(),
         startDate: startDate.toISOString(),
         tags: tags.split(",").map((t) => t.trim()).filter((t) => t),
+        checklist: checklistItems.map((text) => ({
+          text,
+          isCompleted: false,
+          createdAt: new Date(),
+        })),
       };
 
       if (assignmentType === "open") {
@@ -725,6 +751,41 @@ export default function Feed() {
                 </View>
               )}
 
+              {/* Checklist */}
+              <Text style={styles.label}>Checklist (optional)</Text>
+              <View style={styles.checklistContainer}>
+                <View style={styles.addChecklistItemContainer}>
+                  <TextInput
+                    style={styles.checklistInput}
+                    placeholder="Add a to-do item..."
+                    value={newChecklistItem}
+                    onChangeText={setNewChecklistItem}
+                    placeholderTextColor={COLORS.textLight}
+                    onSubmitEditing={handleAddChecklistItem}
+                  />
+                  <TouchableOpacity
+                    style={styles.addChecklistItemButton}
+                    onPress={handleAddChecklistItem}
+                  >
+                    <Ionicons name="add" size={20} color={COLORS.white} />
+                  </TouchableOpacity>
+                </View>
+
+                {checklistItems.length > 0 && (
+                  <View style={styles.checklistItemsList}>
+                    {checklistItems.map((item, index) => (
+                      <View key={index} style={styles.checklistItemRow}>
+                        <Ionicons name="checkbox-outline" size={20} color={COLORS.textLight} />
+                        <Text style={styles.checklistItemText}>{item}</Text>
+                        <TouchableOpacity onPress={() => handleRemoveChecklistItem(index)}>
+                          <Ionicons name="close-circle" size={20} color={COLORS.danger} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+
               <View style={styles.modalButtons}>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.cancelButton]}
@@ -1002,6 +1063,49 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 16,
     fontWeight: "600",
+  },
+  checklistContainer: {
+    marginBottom: 20,
+  },
+  addChecklistItemContainer: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  checklistInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  addChecklistItemButton: {
+    width: 40,
+    height: 40,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checklistItemsList: {
+    gap: 8,
+  },
+  checklistItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 10,
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  checklistItemText: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.text,
   },
   content: {
     flex: 1,

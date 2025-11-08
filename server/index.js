@@ -798,6 +798,114 @@ app.get("/task/:id/subtasks", verifyToken, async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
+app.post("/task/:id/checklist/add", verifyToken, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ message: "Checklist item text is required" });
+    }
+
+    const task = await Task.findById(req.params.id);
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    if (!task.checklist) {
+      task.checklist = [];
+    }
+
+    task.checklist.push({
+      text: text.trim(),
+      isCompleted: false,
+      createdAt: new Date(),
+    });
+
+    const completedCount = task.checklist.filter(item => item.isCompleted).length;
+    task.progressPercentage = task.checklist.length > 0 
+      ? Math.round((completedCount / task.checklist.length) * 100) 
+      : 0;
+
+    await task.save();
+
+    return res.status(200).json({
+      message: "Checklist item added successfully",
+      task,
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.put("/task/:taskId/checklist/:itemId/toggle", verifyToken, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.taskId);
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    if (!task.checklist) {
+      task.checklist = [];
+    }
+
+    const item = task.checklist.id(req.params.itemId);
+    if (!item) {
+      return res.status(404).json({ message: "Checklist item not found" });
+    }
+
+    item.isCompleted = !item.isCompleted;
+    item.completedAt = item.isCompleted ? new Date() : null;
+    item.completedBy = item.isCompleted ? req.userId : null;
+
+    // Recalculate progress percentage
+    const completedCount = task.checklist.filter(item => item.isCompleted).length;
+    task.progressPercentage = task.checklist.length > 0 
+      ? Math.round((completedCount / task.checklist.length) * 100) 
+      : 0;
+
+    await task.save();
+
+    return res.status(200).json({
+      message: "Checklist item updated successfully",
+      task,
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.delete("/task/:taskId/checklist/:itemId", verifyToken, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.taskId);
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    if (!task.checklist) {
+      task.checklist = [];
+    }
+
+    task.checklist.pull(req.params.itemId);
+
+    const completedCount = task.checklist.filter(item => item.isCompleted).length;
+    task.progressPercentage = task.checklist.length > 0 
+      ? Math.round((completedCount / task.checklist.length) * 100) 
+      : 0;
+
+    await task.save();
+
+    return res.status(200).json({
+      message: "Checklist item deleted successfully",
+      task,
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 app.post("/comment/create", verifyToken, async (req, res) => {
   try {
     const { taskId, content, parentComment } = req.body;

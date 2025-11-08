@@ -125,6 +125,31 @@ const taskSchema = mongoose.Schema(
       min: 0,
       max: 100,
     },
+    checklist: [{
+      text: {
+        type: String,
+        required: true,
+        trim: true,
+        maxlength: 500,
+      },
+      isCompleted: {
+        type: Boolean,
+        default: false,
+      },
+      createdAt: {
+        type: Date,
+        default: Date.now,
+      },
+      completedAt: {
+        type: Date,
+        default: null,
+      },
+      completedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+    }],
     tags: [{
       type: String,
       trim: true,

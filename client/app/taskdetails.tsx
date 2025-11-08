@@ -42,6 +42,14 @@ const PRIORITY_COLORS = {
 
 const STATUSES = ["Open", "In Progress", "Under Review", "Completed", "Blocked", "Cancelled", "Pending"];
 
+interface ChecklistItem {
+  _id: string;
+  text: string;
+  isCompleted: boolean;
+  createdAt: string;
+  completedAt?: string;
+}
+
 interface Task {
   _id: string;
   title: string;
@@ -64,6 +72,7 @@ interface Task {
   isOpenForClaims: boolean;
   isClaimed: boolean;
   progressPercentage: number;
+  checklist: ChecklistItem[];
   createdAt: string;
 }
 
@@ -89,6 +98,8 @@ export default function TaskDetails() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [sendingComment, setSendingComment] = useState(false);
+  const [newChecklistItem, setNewChecklistItem] = useState("");
+  const [addingChecklistItem, setAddingChecklistItem] = useState(false);
 
   useEffect(() => {
     loadTaskDetails();
@@ -101,7 +112,12 @@ export default function TaskDetails() {
       const response = await axios.get(`http://${IP}:5555/task/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setTask(response.data);
+      // Initialize checklist if it doesn't exist (for old tasks)
+      const taskData = response.data;
+      if (!taskData.checklist) {
+        taskData.checklist = [];
+      }
+      setTask(taskData);
     } catch (error) {
       console.error("Error loading task:", error);
       Alert.alert("Error", "Failed to load task details");
@@ -161,6 +177,59 @@ export default function TaskDetails() {
       Alert.alert("Error", "Failed to add comment");
     } finally {
       setSendingComment(false);
+    }
+  };
+
+  const handleAddChecklistItem = async () => {
+    if (!newChecklistItem.trim()) {
+      Alert.alert("Error", "Please enter a checklist item");
+      return;
+    }
+
+    try {
+      setAddingChecklistItem(true);
+      const token = await AsyncStorage.getItem("authToken");
+      const response = await axios.post(
+        `http://${IP}:5555/task/${id}/checklist/add`,
+        { text: newChecklistItem },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setTask(response.data.task);
+      setNewChecklistItem("");
+    } catch (error) {
+      console.error("Error adding checklist item:", error);
+      Alert.alert("Error", "Failed to add checklist item");
+    } finally {
+      setAddingChecklistItem(false);
+    }
+  };
+
+  const handleToggleChecklistItem = async (itemId: string) => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      const response = await axios.put(
+        `http://${IP}:5555/task/${id}/checklist/${itemId}/toggle`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setTask(response.data.task);
+    } catch (error) {
+      console.error("Error toggling checklist item:", error);
+      Alert.alert("Error", "Failed to update checklist item");
+    }
+  };
+
+  const handleDeleteChecklistItem = async (itemId: string) => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      const response = await axios.delete(
+        `http://${IP}:5555/task/${id}/checklist/${itemId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setTask(response.data.task);
+    } catch (error) {
+      console.error("Error deleting checklist item:", error);
+      Alert.alert("Error", "Failed to delete checklist item");
     }
   };
 
@@ -334,6 +403,80 @@ export default function TaskDetails() {
               </View>
             </View>
           </View>
+        </View>
+
+        {/* Checklist Section */}
+        <View style={styles.checklistSection}>
+          <Text style={styles.sectionTitle}>
+            Checklist ({task.checklist?.filter(item => item.isCompleted).length || 0}/{task.checklist?.length || 0})
+          </Text>
+
+          {/* Add Checklist Item */}
+          {canEdit && (
+            <View style={styles.addChecklistContainer}>
+              <TextInput
+                style={styles.checklistInput}
+                placeholder="Add a to-do item..."
+                value={newChecklistItem}
+                onChangeText={setNewChecklistItem}
+                placeholderTextColor={COLORS.textLight}
+                onSubmitEditing={handleAddChecklistItem}
+              />
+              <TouchableOpacity
+                style={styles.addChecklistButton}
+                onPress={handleAddChecklistItem}
+                disabled={addingChecklistItem}
+              >
+                {addingChecklistItem ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Ionicons name="add" size={20} color={COLORS.white} />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Checklist Items */}
+          {!task.checklist || task.checklist.length === 0 ? (
+            <View style={styles.emptyChecklist}>
+              <Ionicons name="checkbox-outline" size={48} color={COLORS.textLight} />
+              <Text style={styles.emptyChecklistText}>No checklist items yet</Text>
+            </View>
+          ) : (
+            <View style={styles.checklistItems}>
+              {task.checklist.map((item) => (
+                <View key={item._id} style={styles.checklistItem}>
+                  <TouchableOpacity
+                    style={styles.checkbox}
+                    onPress={() => handleToggleChecklistItem(item._id)}
+                    disabled={!canEdit}
+                  >
+                    <Ionicons
+                      name={item.isCompleted ? "checkbox" : "square-outline"}
+                      size={24}
+                      color={item.isCompleted ? COLORS.success : COLORS.textLight}
+                    />
+                  </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.checklistItemText,
+                      item.isCompleted && styles.checklistItemTextCompleted,
+                    ]}
+                  >
+                    {item.text}
+                  </Text>
+                  {canEdit && (
+                    <TouchableOpacity
+                      style={styles.deleteChecklistButton}
+                      onPress={() => handleDeleteChecklistItem(item._id)}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Comments Section */}
@@ -649,6 +792,70 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: COLORS.text,
     minWidth: 40,
+  },
+  checklistSection: {
+    backgroundColor: COLORS.white,
+    padding: 16,
+    marginBottom: 12,
+  },
+  addChecklistContainer: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 20,
+  },
+  checklistInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  addChecklistButton: {
+    width: 48,
+    height: 48,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyChecklist: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  emptyChecklistText: {
+    fontSize: 16,
+    color: COLORS.textLight,
+    marginTop: 12,
+  },
+  checklistItems: {
+    gap: 12,
+  },
+  checklistItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 12,
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  checkbox: {
+    padding: 4,
+  },
+  checklistItemText: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  checklistItemTextCompleted: {
+    textDecorationLine: "line-through",
+    color: COLORS.textLight,
+  },
+  deleteChecklistButton: {
+    padding: 4,
   },
   commentsSection: {
     backgroundColor: COLORS.white,
