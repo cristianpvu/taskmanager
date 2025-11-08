@@ -918,17 +918,30 @@ app.put("/task/:id/reassign", verifyToken, async (req, res) => {
 
 app.get("/task/:id/available-assignees", verifyToken, async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findById(req.params.id).populate("assignedGroups");
     if (!task) {
       return res.status(404).json({ message: "Task not found" });
     }
 
-    const availableUsers = await User.find({
-      department: task.department,
-      _id: { $nin: task.assignedTo },
-    })
-      .select("firstName lastName email profilePhoto role department")
-      .limit(50);
+    let availableUsers;
+
+    if (task.assignedGroups && task.assignedGroups.length > 0) {
+      const groupIds = task.assignedGroups.map(g => g._id);
+      
+      availableUsers = await User.find({
+        groups: { $in: groupIds },
+        _id: { $nin: task.assignedTo },
+      })
+        .select("firstName lastName email profilePhoto role department")
+        .limit(50);
+    } else {
+      availableUsers = await User.find({
+        department: task.department,
+        _id: { $nin: task.assignedTo },
+      })
+        .select("firstName lastName email profilePhoto role department")
+        .limit(50);
+    }
 
     return res.status(200).json(availableUsers);
   } catch (error) {
