@@ -1228,6 +1228,8 @@ app.post("/task/:id/upload", verifyToken, upload.array("files", 10), async (req,
       return res.status(400).json({ message: "No files uploaded" });
     }
     const task = await Task.findById(req.params.id);
+    const fileNames = [];
+    
     for (const file of req.files) {
       const result = await uploadToCloudinary(file.buffer, "task-management/attachments");
       task.attachments.push({
@@ -1236,7 +1238,18 @@ app.post("/task/:id/upload", verifyToken, upload.array("files", 10), async (req,
         fileName: file.originalname,
         uploadedBy: req.userId
       });
+      fileNames.push(file.originalname);
     }
+    
+    // Log activity
+    task.activityLog.push({
+      type: "attachment_added",
+      user: req.userId,
+      description: `Uploaded ${req.files.length} file(s): ${fileNames.join(", ")}`,
+      metadata: { fileNames, fileCount: req.files.length },
+      timestamp: new Date(),
+    });
+    
     await task.save();
     return res.status(200).json({
       message: "Files uploaded successfully",
@@ -1252,8 +1265,19 @@ app.delete("/task/:taskId/attachment/:attachmentId", verifyToken, async (req, re
     const task = await Task.findById(req.params.taskId);
     const attachment = task.attachments.id(req.params.attachmentId);
     if (attachment) {
+      const fileName = attachment.fileName;
       await cloudinary.uploader.destroy(attachment.publicId);
       attachment.remove();
+      
+      // Log activity
+      task.activityLog.push({
+        type: "attachment_deleted",
+        user: req.userId,
+        description: `Deleted attachment: "${fileName}"`,
+        metadata: { fileName },
+        timestamp: new Date(),
+      });
+      
       await task.save();
     }
     return res.status(200).json({ message: "Attachment deleted successfully" });
@@ -1337,6 +1361,16 @@ app.post("/task/:id/subtask", verifyToken, async (req, res) => {
     });
 
     parentTask.subtasks.push(subtask._id);
+    
+    // Log activity
+    parentTask.activityLog.push({
+      type: "subtask_added",
+      user: req.userId,
+      description: `Created subtask: "${title.trim()}"`,
+      metadata: { subtaskId: subtask._id, subtaskTitle: title.trim() },
+      timestamp: new Date(),
+    });
+    
     await parentTask.save();
 
     const populatedSubtask = await Task.findById(subtask._id)
@@ -1388,6 +1422,15 @@ app.post("/task/:id/subtask/link", verifyToken, async (req, res) => {
     if (!parentTask.subtasks.includes(subtask._id)) {
       parentTask.subtasks.push(subtask._id);
     }
+
+    // Log activity
+    parentTask.activityLog.push({
+      type: "subtask_linked",
+      user: req.userId,
+      description: `Linked existing task as subtask: "${subtask.title}"`,
+      metadata: { subtaskId: subtask._id, subtaskTitle: subtask.title },
+      timestamp: new Date(),
+    });
 
     parentTask.progressPercentage = await calculateTaskProgress(parentTask);
     await parentTask.save();
@@ -1444,12 +1487,23 @@ app.delete("/task/:parentId/subtask/:subtaskId/unlink", verifyToken, async (req,
       return res.status(404).json({ message: "Subtask not found" });
     }
 
+    const subtaskTitle = subtask.title;
+    
     subtask.parentTask = null;
     await subtask.save();
 
     parentTask.subtasks = parentTask.subtasks.filter(
       id => id.toString() !== subtask._id.toString()
     );
+
+    // Log activity
+    parentTask.activityLog.push({
+      type: "subtask_unlinked",
+      user: req.userId,
+      description: `Unlinked subtask: "${subtaskTitle}"`,
+      metadata: { subtaskId: subtask._id, subtaskTitle: subtaskTitle },
+      timestamp: new Date(),
+    });
 
     parentTask.progressPercentage = await calculateTaskProgress(parentTask);
     await parentTask.save();
@@ -1483,6 +1537,15 @@ app.post("/task/:id/checklist/add", verifyToken, async (req, res) => {
       text: text.trim(),
       isCompleted: false,
       createdAt: new Date(),
+    });
+
+    // Log activity
+    task.activityLog.push({
+      type: "checklist_added",
+      user: req.userId,
+      description: `Added checklist item: "${text.trim()}"`,
+      metadata: { checklistText: text.trim() },
+      timestamp: new Date(),
     });
 
     task.progressPercentage = await calculateTaskProgress(task);
@@ -1520,9 +1583,24 @@ app.put("/task/:taskId/checklist/:itemId/toggle", verifyToken, async (req, res) 
       return res.status(404).json({ message: "Checklist item not found" });
     }
 
+    const wasCompleted = item.isCompleted;
     item.isCompleted = !item.isCompleted;
     item.completedAt = item.isCompleted ? new Date() : null;
     item.completedBy = item.isCompleted ? req.userId : null;
+
+    // Log activity
+    task.activityLog.push({
+      type: item.isCompleted ? "checklist_completed" : "checklist_uncompleted",
+      user: req.userId,
+      description: item.isCompleted 
+        ? `Completed checklist item: "${item.text}"` 
+        : `Uncompleted checklist item: "${item.text}"`,
+      metadata: { 
+        checklistText: item.text,
+        completed: item.isCompleted 
+      },
+      timestamp: new Date(),
+    });
 
     task.progressPercentage = await calculateTaskProgress(task);
     await task.save();
@@ -1560,7 +1638,17 @@ app.delete("/task/:taskId/checklist/:itemId", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Checklist item not found" });
     }
 
+    const itemText = itemExists.text;
     task.checklist.pull(req.params.itemId);
+
+    // Log activity
+    task.activityLog.push({
+      type: "checklist_deleted",
+      user: req.userId,
+      description: `Deleted checklist item: "${itemText}"`,
+      metadata: { checklistText: itemText },
+      timestamp: new Date(),
+    });
 
     task.progressPercentage = await calculateTaskProgress(task);
     await task.save();

@@ -257,6 +257,7 @@ export default function TaskDetails() {
       );
       setNewChecklistItem("");
       loadTaskDetails();
+      loadActivityLog();
     } catch (error) {
       console.error("Error adding checklist item:", error);
       Alert.alert("Error", "Failed to add checklist item");
@@ -274,6 +275,7 @@ export default function TaskDetails() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       loadTaskDetails();
+      loadActivityLog();
     } catch (error) {
       console.error("Error toggling checklist item:", error);
       Alert.alert("Error", "Failed to update checklist item");
@@ -288,6 +290,7 @@ export default function TaskDetails() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       loadTaskDetails();
+      loadActivityLog();
     } catch (error) {
       console.error("Error deleting checklist item:", error);
       Alert.alert("Error", "Failed to delete checklist item");
@@ -310,6 +313,7 @@ export default function TaskDetails() {
       );
       setNewSubtaskTitle("");
       loadTaskDetails();
+      loadActivityLog();
     } catch (error) {
       console.error("Error creating subtask:", error);
       Alert.alert("Error", "Failed to create subtask");
@@ -346,6 +350,7 @@ export default function TaskDetails() {
       );
       setShowLinkTaskModal(false);
       loadTaskDetails();
+      loadActivityLog();
       Alert.alert("Success", "Task linked successfully");
     } catch (error: any) {
       console.error("Error linking task:", error);
@@ -372,6 +377,7 @@ export default function TaskDetails() {
                 { headers: { Authorization: `Bearer ${token}` } }
               );
               loadTaskDetails();
+              loadActivityLog();
               Alert.alert("Success", "Subtask unlinked successfully");
             } catch (error) {
               console.error("Error unlinking subtask:", error);
@@ -423,6 +429,7 @@ export default function TaskDetails() {
       setShowReassignModal(false);
       setReassignReason("");
       loadTaskDetails();
+      loadActivityLog();
       Alert.alert("Success", "Task reassigned successfully");
     } catch (error: any) {
       console.error("Error reassigning task:", error);
@@ -934,7 +941,6 @@ export default function TaskDetails() {
             </View>
           )}
 
-          {/* Combined Activity Log & Comments */}
           {comments.length === 0 && activityLog.length === 0 ? (
             <View style={styles.emptyComments}>
               <Ionicons name="time-outline" size={48} color={COLORS.textLight} />
@@ -942,51 +948,69 @@ export default function TaskDetails() {
             </View>
           ) : (
             <>
-              {/* Activity Log Items */}
-              {activityLog.map((activity) => (
-                <View key={activity._id} style={styles.activityItem}>
-                  <View style={styles.activityIcon}>
-                    <Ionicons 
-                      name={getActivityIcon(activity.type) as any} 
-                      size={16} 
-                      color={COLORS.primary} 
-                    />
-                  </View>
-                  <View style={styles.activityContent}>
-                    <Text style={styles.activityText}>
-                      <Text style={styles.activityUser}>
-                        {activity.user.firstName} {activity.user.lastName}
-                      </Text>
-                      {" "}
-                      {activity.description}
-                    </Text>
-                    <Text style={styles.activityTime}>
-                      {formatRelativeTime(activity.timestamp)}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-
-              {/* Comments */}
-              {comments.map((comment) => (
-                <View key={comment._id} style={styles.comment}>
-                  <View style={styles.commentAvatar}>
-                    <Text style={styles.commentAvatarText}>
-                      {comment.author.firstName[0]}
-                      {comment.author.lastName[0]}
-                    </Text>
-                  </View>
-                  <View style={styles.commentContent}>
-                    <View style={styles.commentHeader}>
-                      <Text style={styles.commentAuthor}>
-                        {comment.author.firstName} {comment.author.lastName}
-                      </Text>
-                      <Text style={styles.commentTime}>{formatRelativeTime(comment.createdAt)}</Text>
-                    </View>
-                    <Text style={styles.commentText}>{comment.content}</Text>
-                  </View>
-                </View>
-              ))}
+              {[
+                ...activityLog.map((activity) => ({
+                  ...activity,
+                  itemType: 'activity',
+                  activityType: activity.type,
+                  timestamp: activity.timestamp,
+                })),
+                ...comments.map((comment) => ({
+                  ...comment,
+                  itemType: 'comment',
+                  timestamp: comment.createdAt,
+                })),
+              ]
+                .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                .map((item) => {
+                  if (item.itemType === 'activity') {
+                    return (
+                      <View key={`activity-${item._id}`} style={styles.activityItem}>
+                        <View style={styles.activityIcon}>
+                          <Ionicons 
+                            name={getActivityIcon(item.activityType) as any} 
+                            size={16} 
+                            color={COLORS.primary} 
+                          />
+                        </View>
+                        <View style={styles.activityContent}>
+                          <Text style={styles.activityText}>
+                            <Text style={styles.activityUser}>
+                              {item.user.firstName} {item.user.lastName}
+                            </Text>
+                            {" "}
+                            {item.description}
+                          </Text>
+                          <Text style={styles.activityTime}>
+                            {formatRelativeTime(item.timestamp)}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  } else {
+                    return (
+                      <View key={`comment-${item._id}`} style={styles.comment}>
+                        <View style={styles.commentAvatar}>
+                          <Text style={styles.commentAvatarText}>
+                            {item.author.firstName[0]}
+                            {item.author.lastName[0]}
+                          </Text>
+                        </View>
+                        <View style={styles.commentContent}>
+                          <View style={styles.commentHeader}>
+                            <Text style={styles.commentAuthor}>
+                              {item.author.firstName} {item.author.lastName}
+                            </Text>
+                            <Text style={styles.commentTime}>
+                              {formatRelativeTime(item.timestamp)}
+                            </Text>
+                          </View>
+                          <Text style={styles.commentText}>{item.content}</Text>
+                        </View>
+                      </View>
+                    );
+                  }
+                })}
             </>
           )}
         </View>
