@@ -14,7 +14,7 @@ function RootLayoutNav() {
     const currentRoute = segments[0];
 
     if (user) {
-      if (currentRoute !== "home") {
+      if (currentRoute !== "home" && currentRoute !== "(tabs)") {
         router.replace("/home" as any);
       }
     } else {
@@ -38,6 +38,7 @@ function RootLayoutNav() {
       <Stack.Screen name="autentificareutilizator" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="home" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   );
 }
