@@ -1,5 +1,16 @@
-import { Text, View, SafeAreaView, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView } from "react-native";
-import { useState } from "react";
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  SafeAreaView,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  StatusBar,
+  Alert,
+} from "react-native";
 import { router } from "expo-router";
 import { authAPI } from "@/services/api";
 
@@ -10,253 +21,245 @@ export default function SignUp() {
   const [lastName, setLastName] = useState("");
   const [role, setRole] = useState("Employee");
   const [department, setDepartment] = useState("Engineering");
-
-  const handleSignUp = async () => {
-    if (!email || !password || !firstName || !lastName) {
-      Alert.alert("Error", "Please fill in all fields");
-      return;
-    }
-
-    try {
-      await authAPI.register(email, password, firstName, lastName, role, department);
-      Alert.alert("Success", "Account created successfully", [
-        { text: "OK", onPress: () => router.push("/login") }
-      ]);
-    } catch (error: any) {
-      Alert.alert("Error", error.response?.data?.message || "Registration failed");
-    }
-  };
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const roles = ["Employee", "Team Lead", "Project Manager", "Intern", "Contractor", "CEO"];
   const departments = ["Engineering", "Design", "Marketing", "Sales", "HR", "Finance", "Operations", "Customer Support"];
 
+  const handleSignUp = async () => {
+    if (!email || !password || !firstName || !lastName) {
+      setError("Please fill in all fields");
+      return;
+    }
+
+    setError("");
+    setIsLoading(true);
+
+    try {
+      await authAPI.register(email.trim().toLowerCase(), password, firstName, lastName, role, department);
+      Alert.alert("Success", "Account created successfully", [
+        { text: "OK", onPress: () => router.push("/login") }
+      ]);
+    } catch (err: any) {
+      console.error("SignUp error:", err);
+      setError(err.response?.data?.message || "Registration failed!");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.content}>
-          <View style={styles.header}>
-            <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Join your team today</Text>
-          </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F0F4FF" }}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F0F4FF" />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 24, paddingVertical: 40 }}>
 
-          <View style={styles.form}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Email Address</Text>
-              <TextInput
-                placeholder="Enter your email"
-                placeholderTextColor="#64748B"
-                value={email}
-                onChangeText={setEmail}
-                style={styles.input}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
+            <View style={{ alignItems: "center", marginBottom: 30, marginTop: 30 }}>
+              <Text style={{ fontSize: 32, fontWeight: "bold", marginBottom: 8 }}>
+              <Text style={{ color: "#1F2937" }}>Secure</Text>
+              <Text style={{ color: "#2563EB" }}>Task</Text>
+              </Text>
             </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                placeholder="Create a password"
-                placeholderTextColor="#64748B"
-                value={password}
-                onChangeText={setPassword}
-                style={styles.input}
-                secureTextEntry
-              />
-            </View>
+            {error ? (
+              <View
+                style={{
+                  backgroundColor: "#FEE2E2",
+                  borderWidth: 1,
+                  borderColor: "#FCA5A5",
+                  borderRadius: 12,
+                  padding: 12,
+                  marginBottom: 16,
+                  flexDirection: "row",
+                  alignItems: "center",
+                }}
+              >
+                <Text style={{ fontSize: 18, marginRight: 8 }}>⚠️</Text>
+                <Text style={{ color: "#B91C1C", fontSize: 14, flex: 1 }}>{error}</Text>
+              </View>
+            ) : null}
 
-            <View style={styles.row}>
-              <View style={[styles.inputContainer, { flex: 1 }]}>
-                <Text style={styles.label}>First Name</Text>
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 14, fontWeight: "600", color: "#374151", marginBottom: 8 }}>
+                Email
+              </Text>
+              <View style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: "#F9FAFB",
+                borderWidth: 1,
+                borderColor: "#E5E7EB",
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                height: 56,
+              }}>
                 <TextInput
-                  placeholder="First name"
-                  placeholderTextColor="#64748B"
-                  value={firstName}
-                  onChangeText={setFirstName}
-                  style={styles.input}
+                  placeholder="example@email.com"
+                  placeholderTextColor="#9CA3AF"
+                  value={email}
+                  onChangeText={(text) => { setEmail(text); setError(""); }}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{ flex: 1, fontSize: 16, color: "#1F2937", padding: 0 }}
                 />
               </View>
+            </View>
 
-              <View style={[styles.inputContainer, { flex: 1 }]}>
-                <Text style={styles.label}>Last Name</Text>
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 14, fontWeight: "600", color: "#374151", marginBottom: 8 }}>
+                Password
+              </Text>
+              <View style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: "#F9FAFB",
+                borderWidth: 1,
+                borderColor: "#E5E7EB",
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                height: 56,
+              }}>
                 <TextInput
-                  placeholder="Last name"
-                  placeholderTextColor="#64748B"
-                  value={lastName}
-                  onChangeText={setLastName}
-                  style={styles.input}
+                  placeholder="Enter your password"
+                  placeholderTextColor="#9CA3AF"
+                  value={password}
+                  onChangeText={(text) => { setPassword(text); setError(""); }}
+                  secureTextEntry
+                  style={{ flex: 1, fontSize: 16, color: "#1F2937", padding: 0 }}
                 />
               </View>
             </View>
 
-            <View style={styles.selectorContainer}>
-              <Text style={styles.selectorLabel}>Role</Text>
-              <View style={styles.chipContainer}>
-                {roles.map((r) => (
+            <View style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: "600", color: "#374151", marginBottom: 8 }}>First Name</Text>
+                <View style={{
+                  backgroundColor: "#F9FAFB",
+                  borderWidth: 1,
+                  borderColor: "#E5E7EB",
+                  borderRadius: 12,
+                  paddingHorizontal: 16,
+                  height: 56,
+                  justifyContent: "center",
+                }}>
+                  <TextInput
+                    placeholder="First name"
+                    placeholderTextColor="#9CA3AF"
+                    value={firstName}
+                    onChangeText={(text) => { setFirstName(text); setError(""); }}
+                    style={{ fontSize: 16, color: "#1F2937", padding: 0 }}
+                  />
+                </View>
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: "600", color: "#374151", marginBottom: 8 }}>Last Name</Text>
+                <View style={{
+                  backgroundColor: "#F9FAFB",
+                  borderWidth: 1,
+                  borderColor: "#E5E7EB",
+                  borderRadius: 12,
+                  paddingHorizontal: 16,
+                  height: 56,
+                  justifyContent: "center",
+                }}>
+                  <TextInput
+                    placeholder="Last name"
+                    placeholderTextColor="#9CA3AF"
+                    value={lastName}
+                    onChangeText={(text) => { setLastName(text); setError(""); }}
+                    style={{ fontSize: 16, color: "#1F2937", padding: 0 }}
+                  />
+                </View>
+              </View>
+            </View>
+
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 14, fontWeight: "600", color: "#374151", marginBottom: 8 }}>Role</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {roles.map(r => (
                   <TouchableOpacity
                     key={r}
                     onPress={() => setRole(r)}
-                    style={[
-                      styles.chip,
-                      role === r && styles.chipSelected
-                    ]}
-                    activeOpacity={0.7}
+                    style={{
+                      paddingVertical: 10,
+                      paddingHorizontal: 16,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: role === r ? "#2563EB" : "#E5E7EB",
+                      backgroundColor: role === r ? "#2563EB" : "#F9FAFB",
+                    }}
                   >
-                    <Text style={[
-                      styles.chipText,
-                      role === r && styles.chipTextSelected
-                    ]}>{r}</Text>
+                    <Text style={{ color: role === r ? "#FFF" : "#1F2937", fontWeight: "600" }}>{r}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
 
-            <View style={styles.selectorContainer}>
-              <Text style={styles.selectorLabel}>Department</Text>
-              <View style={styles.chipContainer}>
-                {departments.map((d) => (
+            <View style={{ marginBottom: 24 }}>
+              <Text style={{ fontSize: 14, fontWeight: "600", color: "#374151", marginBottom: 8 }}>Department</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {departments.map(d => (
                   <TouchableOpacity
                     key={d}
                     onPress={() => setDepartment(d)}
-                    style={[
-                      styles.chip,
-                      department === d && styles.chipSelected
-                    ]}
-                    activeOpacity={0.7}
+                    style={{
+                      paddingVertical: 10,
+                      paddingHorizontal: 16,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: department === d ? "#2563EB" : "#E5E7EB",
+                      backgroundColor: department === d ? "#2563EB" : "#F9FAFB",
+                    }}
                   >
-                    <Text style={[
-                      styles.chipText,
-                      department === d && styles.chipTextSelected
-                    ]}>{d}</Text>
+                    <Text style={{ color: department === d ? "#FFF" : "#1F2937", fontWeight: "600" }}>{d}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
 
-            <TouchableOpacity onPress={handleSignUp} style={styles.button} activeOpacity={0.8}>
-              <Text style={styles.buttonText}>Create Account</Text>
+            <TouchableOpacity
+              onPress={handleSignUp}
+              disabled={isLoading}
+              style={{
+                backgroundColor: isLoading ? "#93C5FD" : "#2563EB",
+                paddingVertical: 16,
+                borderRadius: 12,
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 24,
+                shadowColor: "#2563EB",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+                elevation: 8,
+                minHeight: 56,
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={{ color: "#FFF", fontSize: 16, fontWeight: "600" }}>
+                {isLoading ? "Creating..." : "Create Account"}
+              </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-              <Text style={styles.backButtonText}>Back to Start</Text>
+            <TouchableOpacity onPress={() => router.back()}>
+              <Text style={{ fontSize: 14, color: "#2563EB", fontWeight: "600", textAlign: "center" }}>
+                Back to Start
+              </Text>
             </TouchableOpacity>
+
           </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#0A1628",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: 32,
-    paddingTop: 60,
-    paddingBottom: 40,
-  },
-  header: {
-    marginBottom: 36,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    marginBottom: 8,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#94A3B8",
-  },
-  form: {
-    gap: 20,
-  },
-  row: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  inputContainer: {
-    gap: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#E2E8F0",
-    marginLeft: 4,
-  },
-  input: {
-    backgroundColor: "#1E293B",
-    borderWidth: 1,
-    borderColor: "#334155",
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: "#FFFFFF",
-  },
-  selectorContainer: {
-    gap: 12,
-  },
-  selectorLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#E2E8F0",
-    marginLeft: 4,
-  },
-  chipContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  chip: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: "#1E293B",
-    borderWidth: 1,
-    borderColor: "#334155",
-  },
-  chipSelected: {
-    backgroundColor: "#3B82F6",
-    borderColor: "#3B82F6",
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: "#94A3B8",
-  },
-  chipTextSelected: {
-    color: "#FFFFFF",
-  },
-  button: {
-    backgroundColor: "#3B82F6",
-    paddingVertical: 18,
-    borderRadius: 12,
-    marginTop: 12,
-    shadowColor: "#3B82F6",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "600",
-    textAlign: "center",
-    letterSpacing: 0.5,
-  },
-  backButton: {
-    paddingVertical: 12,
-  },
-  backButtonText: {
-    color: "#64748B",
-    fontSize: 15,
-    textAlign: "center",
-  },
-});

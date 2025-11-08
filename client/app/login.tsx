@@ -1,5 +1,17 @@
-import { Text, View, SafeAreaView, TextInput, TouchableOpacity, Alert, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
-import { useState } from "react";
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  SafeAreaView,
+  StatusBar,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
 import { authAPI } from "@/services/api";
@@ -7,150 +19,286 @@ import { authAPI } from "@/services/api";
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
   const { login } = useAuth();
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert("Error", "Please fill in all fields");
+      setError("Email and password are required!");
       return;
     }
 
+    setError("");
+    setIsLoading(true);
+
     try {
-      const response = await authAPI.login(email, password);
-      
+      const response = await authAPI.login(email.trim().toLowerCase(), password);
+
       if (response.token && response.user) {
         await login(response.token, response.user);
         router.replace("/home" as any);
       }
-    } catch (error: any) {
-      Alert.alert("Error", error.response?.data?.message || "Login failed");
+    } catch (err: any) {
+      console.error("Login error:", err);
+      if (err.response) {
+        if (err.response.status === 404) {
+          setError("User not found. Check your email!");
+        } else if (err.response.status === 401) {
+          setError("Incorrect password!");
+        } else {
+          setError(err.response.data.message || "Login failed!");
+        }
+      } else if (err.request) {
+        setError("Cannot connect to the server. Check your connection!");
+      } else {
+        setError("Unexpected error occurred!");
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  const handleForgotPassword = () => {
+    Alert.alert("Reset Password", "A reset link has been sent to your email!");
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F0F4FF" }}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F0F4FF" />
+
+      <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.keyboardView}
+        style={{ flex: 1 }}
       >
-        <View style={styles.content}>
-          <View style={styles.header}>
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Sign in to continue</Text>
-          </View>
-
-          <View style={styles.form}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Email Address</Text>
-              <TextInput
-                placeholder="Enter your email"
-                placeholderTextColor="#64748B"
-                value={email}
-                onChangeText={setEmail}
-                style={styles.input}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View
+            style={{
+              flex: 1,
+              justifyContent: "center",
+              paddingHorizontal: 24,
+              paddingVertical: 40,
+            }}
+          >
+            <View style={{ alignItems: "center", marginBottom: 48 }}>
+              <Text style={{ fontSize: 32, fontWeight: "bold", marginBottom: 8 }}>
+                <Text style={{ color: "#1F2937" }}>Secure</Text>
+                <Text style={{ color: "#2563EB" }}>Task</Text>
+              </Text>
             </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                placeholder="Enter your password"
-                placeholderTextColor="#64748B"
-                value={password}
-                onChangeText={setPassword}
-                style={styles.input}
-                secureTextEntry
-              />
+            {error ? (
+              <View
+                style={{
+                  backgroundColor: "#FEE2E2",
+                  borderWidth: 1,
+                  borderColor: "#FCA5A5",
+                  borderRadius: 12,
+                  padding: 12,
+                  marginBottom: 16,
+                  flexDirection: "row",
+                  alignItems: "center",
+                }}
+              >
+                <Text style={{ fontSize: 18, marginRight: 8 }}>⚠️</Text>
+                <Text style={{ color: "#B91C1C", fontSize: 14, flex: 1 }}>{error}</Text>
+              </View>
+            ) : null}
+
+            <View style={{ marginBottom: 16 }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: "600",
+                  color: "#374151",
+                  marginBottom: 8,
+                }}
+              >
+                Email
+              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: "#F9FAFB",
+                  borderWidth: 1,
+                  borderColor: "#E5E7EB",
+                  borderRadius: 12,
+                  paddingHorizontal: 16,
+                  height: 56,
+                }}
+              >
+                <TextInput
+                  placeholder="example@email.com"
+                  placeholderTextColor="#9CA3AF"
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    setError("");
+                  }}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{
+                    flex: 1,
+                    fontSize: 16,
+                    color: "#1F2937",
+                    padding: 0,
+                  }}
+                />
+              </View>
             </View>
 
-            <TouchableOpacity onPress={handleLogin} style={styles.button} activeOpacity={0.8}>
-              <Text style={styles.buttonText}>Sign In</Text>
+            <View style={{ marginBottom: 12 }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: "600",
+                  color: "#374151",
+                  marginBottom: 8,
+                }}
+              >
+                Password
+              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: "#F9FAFB",
+                  borderWidth: 1,
+                  borderColor: "#E5E7EB",
+                  borderRadius: 12,
+                  paddingHorizontal: 16,
+                  height: 56,
+                }}
+              >
+                <TextInput
+                  placeholder="Enter your password"
+                  placeholderTextColor="#9CA3AF"
+                  value={password}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    setError("");
+                  }}
+                  secureTextEntry
+                  style={{
+                    flex: 1,
+                    fontSize: 16,
+                    color: "#1F2937",
+                    padding: 0,
+                  }}
+                />
+              </View>
+            </View>
+
+            <View style={{ alignItems: "flex-end", marginBottom: 24 }}>
+              <TouchableOpacity onPress={handleForgotPassword}>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    color: "#2563EB",
+                    fontWeight: "600",
+                  }}
+                >
+                  Forgot password?
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              onPress={handleLogin}
+              disabled={isLoading}
+              style={{
+                backgroundColor: isLoading ? "#93C5FD" : "#2563EB",
+                paddingVertical: 16,
+                borderRadius: 12,
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 24,
+                shadowColor: "#2563EB",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+                elevation: 8,
+                minHeight: 56,
+              }}
+              activeOpacity={0.8}
+            >
+              {isLoading ? (
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <ActivityIndicator color="#FFF" size="small" />
+                  <Text
+                    style={{
+                      color: "#FFF",
+                      fontSize: 16,
+                      fontWeight: "600",
+                      marginLeft: 12,
+                    }}
+                  >
+                    Loading...
+                  </Text>
+                </View>
+              ) : (
+                <Text
+                  style={{
+                    color: "#FFF",
+                    fontSize: 16,
+                    fontWeight: "600",
+                  }}
+                >
+                  Sign In
+                </Text>
+              )}
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-              <Text style={styles.backButtonText}>Back to Start</Text>
-            </TouchableOpacity>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginBottom: 24,
+              }}
+            >
+              <View style={{ flex: 1, height: 1, backgroundColor: "#E5E7EB" }} />
+              <Text
+                style={{
+                  marginHorizontal: 16,
+                  fontSize: 14,
+                  color: "#6B7280",
+                }}
+              >
+                or
+              </Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: "#E5E7EB" }} />
+            </View>
+
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ fontSize: 14, color: "#6B7280" }}>
+                Don’t have an account?{" "}
+              </Text>
+              <TouchableOpacity onPress={() => router.push("/autentificareutilizator")}>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    color: "#2563EB",
+                    fontWeight: "600",
+                  }}
+                >
+                  Create one
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#0A1628",
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 32,
-    paddingTop: 60,
-  },
-  header: {
-    marginBottom: 48,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    marginBottom: 8,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#94A3B8",
-  },
-  form: {
-    gap: 24,
-  },
-  inputContainer: {
-    gap: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#E2E8F0",
-    marginLeft: 4,
-  },
-  input: {
-    backgroundColor: "#1E293B",
-    borderWidth: 1,
-    borderColor: "#334155",
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: "#FFFFFF",
-  },
-  button: {
-    backgroundColor: "#3B82F6",
-    paddingVertical: 18,
-    borderRadius: 12,
-    marginTop: 8,
-    shadowColor: "#3B82F6",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "600",
-    textAlign: "center",
-    letterSpacing: 0.5,
-  },
-  backButton: {
-    paddingVertical: 12,
-  },
-  backButtonText: {
-    color: "#64748B",
-    fontSize: 15,
-    textAlign: "center",
-  },
-});

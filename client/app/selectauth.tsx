@@ -1,35 +1,62 @@
-import { Text, View, SafeAreaView, TouchableOpacity, StyleSheet } from "react-native";
+import { Text, View, SafeAreaView, TouchableOpacity, StyleSheet, Dimensions } from "react-native";
 import { router } from "expo-router";
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+
+const { width } = Dimensions.get('window');
 
 export default function SelectAuth() {
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.content}>
-                <View style={styles.header}>
-                    <Text style={styles.logo}>TaskFlow</Text>
-                    <Text style={styles.tagline}>Professional Task Management</Text>
+            <LinearGradient
+                colors={['#2563EB', '#1E40AF']}
+                style={styles.headerGradient}
+            >
+                <View style={styles.decorCircle1} />
+                <View style={styles.decorCircle2} />
+
+                <View style={styles.logoContainer}>
+                    <View style={styles.logoBox}>
+                        <Ionicons name="shield-checkmark" size={50} color="#2563EB" />
+                    </View>
                 </View>
+
+                <Text style={styles.appTitle}>SecureTask</Text>
+                <Text style={styles.appSubtitle}>Security Information Service</Text>
+            </LinearGradient>
+
+            <View style={styles.contentContainer}>
+                <Text style={styles.welcomeTitle}>Bine ai venit!</Text>
+                <Text style={styles.welcomeSubtitle}>
+                    Gestionează task-urile de securitate cu ușurință
+                </Text>
 
                 <View style={styles.buttonContainer}>
                     <TouchableOpacity
-                        style={styles.primaryButton}
+                        style={styles.signInButton}
                         onPress={() => router.push("/login")}
                         activeOpacity={0.8}
                     >
-                        <Text style={styles.primaryButtonText}>Sign In</Text>
+                        <Text style={styles.signInButtonText}>Sign In</Text>
                     </TouchableOpacity>
-
                     <TouchableOpacity
-                        style={styles.secondaryButton}
+                        style={styles.signUpButton}
                         onPress={() => router.push("/autentificareutilizator")}
                         activeOpacity={0.8}
                     >
-                        <Text style={styles.secondaryButtonText}>Create Account</Text>
+                        <LinearGradient
+                            colors={['#2563EB', '#1E40AF']}
+                            style={styles.signUpButtonGradient}
+                        >
+                            <Text style={styles.signUpButtonText}>Create Account</Text>
+                        </LinearGradient>
                     </TouchableOpacity>
                 </View>
 
-                <Text style={styles.footer}>Streamline your workflow</Text>
+                <Text style={styles.termsText}>
+                    Conectându-te, ești de acord cu{' '}
+                    <Text style={styles.termsLink}>Termenii și Condițiile</Text>
+                </Text>
             </View>
         </SafeAreaView>
     );
@@ -38,69 +65,131 @@ export default function SelectAuth() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#0A1628",
+        backgroundColor: '#FFFFFF',
     },
-    content: {
+    headerGradient: {
+        paddingTop: 80,
+        paddingBottom: 120,
+        paddingHorizontal: 24,
+        position: 'relative',
+        overflow: 'hidden',
+    },
+    decorCircle1: {
+        position: 'absolute',
+        top: 40,
+        right: 40,
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    decorCircle2: {
+        position: 'absolute',
+        bottom: 40,
+        left: 40,
+        width: 160,
+        height: 160,
+        borderRadius: 80,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    logoContainer: {
+        alignItems: 'center',
+        marginBottom: 24,
+        zIndex: 10,
+    },
+    logoBox: {
+        width: 80,
+        height: 80,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8,
+    },
+    appTitle: {
+        fontSize: 32,
+        fontWeight: 'bold',
+        color: '#FFFFFF',
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    appSubtitle: {
+        fontSize: 14,
+        color: 'rgba(255, 255, 255, 0.9)',
+        textAlign: 'center',
+    },
+    contentContainer: {
         flex: 1,
-        justifyContent: "space-between",
-        alignItems: "center",
-        paddingHorizontal: 32,
-        paddingVertical: 60,
+        backgroundColor: '#FFFFFF',
+        marginTop: -60,
+        borderTopLeftRadius: 30,
+        borderTopRightRadius: 30,
+        paddingHorizontal: 24,
+        paddingTop: 32,
     },
-    header: {
-        alignItems: "center",
-        marginTop: 80,
+    welcomeTitle: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: '#1F2937',
+        textAlign: 'center',
+        marginBottom: 8,
     },
-    logo: {
-        fontSize: 48,
-        fontWeight: "700",
-        color: "#FFFFFF",
-        letterSpacing: -1,
-        marginBottom: 12,
-    },
-    tagline: {
+    welcomeSubtitle: {
         fontSize: 16,
-        color: "#94A3B8",
-        letterSpacing: 0.5,
+        color: '#6B7280',
+        textAlign: 'center',
+        marginBottom: 40,
     },
     buttonContainer: {
-        width: "100%",
         gap: 16,
     },
-    primaryButton: {
-        backgroundColor: "#3B82F6",
+    signInButton: {
+        backgroundColor: '#2563EB',
         paddingVertical: 18,
-        borderRadius: 12,
-        shadowColor: "#3B82F6",
+        borderRadius: 16,
+        alignItems: 'center',
+        shadowColor: '#2563EB',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
         elevation: 6,
     },
-    primaryButtonText: {
-        color: "#FFFFFF",
-        fontSize: 17,
-        fontWeight: "600",
-        textAlign: "center",
-        letterSpacing: 0.5,
+    signInButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '600',
     },
-    secondaryButton: {
-        backgroundColor: "transparent",
+    signUpButton: {
+        borderRadius: 16,
+        overflow: 'hidden',
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    signUpButtonGradient: {
         paddingVertical: 18,
-        borderRadius: 12,
-        borderWidth: 2,
-        borderColor: "#3B82F6",
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    secondaryButtonText: {
-        color: "#3B82F6",
-        fontSize: 17,
-        fontWeight: "600",
-        textAlign: "center",
-        letterSpacing: 0.5,
+    signUpButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '600',
     },
-    footer: {
-        fontSize: 14,
-        color: "#64748B",
-        marginBottom: 20,
+    termsText: {
+        fontSize: 12,
+        color: '#6B7280',
+        textAlign: 'center',
+        marginTop: 32,
+    },
+    termsLink: {
+        color: '#2563EB',
+        fontWeight: '600',
     },
 });
