@@ -189,13 +189,14 @@ export default function TaskDetails() {
     try {
       setAddingChecklistItem(true);
       const token = await AsyncStorage.getItem("authToken");
-      const response = await axios.post(
+      await axios.post(
         `http://${IP}:5555/task/${id}/checklist/add`,
         { text: newChecklistItem },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setTask(response.data.task);
       setNewChecklistItem("");
+      // Reload task to get fully populated data
+      loadTaskDetails();
     } catch (error) {
       console.error("Error adding checklist item:", error);
       Alert.alert("Error", "Failed to add checklist item");
@@ -207,12 +208,13 @@ export default function TaskDetails() {
   const handleToggleChecklistItem = async (itemId: string) => {
     try {
       const token = await AsyncStorage.getItem("authToken");
-      const response = await axios.put(
+      await axios.put(
         `http://${IP}:5555/task/${id}/checklist/${itemId}/toggle`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setTask(response.data.task);
+      // Reload task to get fully populated data
+      loadTaskDetails();
     } catch (error) {
       console.error("Error toggling checklist item:", error);
       Alert.alert("Error", "Failed to update checklist item");
@@ -222,11 +224,12 @@ export default function TaskDetails() {
   const handleDeleteChecklistItem = async (itemId: string) => {
     try {
       const token = await AsyncStorage.getItem("authToken");
-      const response = await axios.delete(
+      await axios.delete(
         `http://${IP}:5555/task/${id}/checklist/${itemId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setTask(response.data.task);
+      // Reload task to get fully populated data
+      loadTaskDetails();
     } catch (error) {
       console.error("Error deleting checklist item:", error);
       Alert.alert("Error", "Failed to delete checklist item");
@@ -444,7 +447,7 @@ export default function TaskDetails() {
             </View>
           ) : (
             <View style={styles.checklistItems}>
-              {task.checklist.map((item) => (
+              {(task.checklist || []).map((item) => (
                 <View key={item._id} style={styles.checklistItem}>
                   <TouchableOpacity
                     style={styles.checkbox}

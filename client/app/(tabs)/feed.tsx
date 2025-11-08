@@ -265,7 +265,6 @@ export default function Feed() {
         checklist: checklistItems.map((text) => ({
           text,
           isCompleted: false,
-          createdAt: new Date(),
         })),
       };
 

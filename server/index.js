@@ -376,8 +376,16 @@ app.post("/task/create", verifyToken, async (req, res) => {
       startDate,
       parentTask,
       isOpenForClaims,
-      tags
+      tags,
+      checklist
     } = req.body;
+    // Calculate initial progress percentage based on checklist
+    let progressPercentage = 0;
+    if (checklist && checklist.length > 0) {
+      const completedCount = checklist.filter(item => item.isCompleted).length;
+      progressPercentage = Math.round((completedCount / checklist.length) * 100);
+    }
+
     const task = await Task.create({
       title,
       description,
@@ -392,7 +400,9 @@ app.post("/task/create", verifyToken, async (req, res) => {
       startDate: startDate || new Date(),
       parentTask: parentTask || null,
       isOpenForClaims: isOpenForClaims || false,
-      tags: tags || []
+      tags: tags || [],
+      checklist: checklist || [],
+      progressPercentage: progressPercentage
     });
     if (parentTask) {
       await Task.findByIdAndUpdate(parentTask, {
@@ -849,6 +859,10 @@ app.put("/task/:taskId/checklist/:itemId/toggle", verifyToken, async (req, res) 
       task.checklist = [];
     }
 
+    if (task.checklist.length === 0) {
+      return res.status(404).json({ message: "Checklist is empty" });
+    }
+
     const item = task.checklist.id(req.params.itemId);
     if (!item) {
       return res.status(404).json({ message: "Checklist item not found" });
@@ -885,6 +899,15 @@ app.delete("/task/:taskId/checklist/:itemId", verifyToken, async (req, res) => {
 
     if (!task.checklist) {
       task.checklist = [];
+    }
+
+    if (task.checklist.length === 0) {
+      return res.status(404).json({ message: "Checklist is empty" });
+    }
+
+    const itemExists = task.checklist.id(req.params.itemId);
+    if (!itemExists) {
+      return res.status(404).json({ message: "Checklist item not found" });
     }
 
     task.checklist.pull(req.params.itemId);
