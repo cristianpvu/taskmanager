@@ -116,6 +116,10 @@ export default function TaskDetails() {
   const [addingChecklistItem, setAddingChecklistItem] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [creatingSubtask, setCreatingSubtask] = useState(false);
+  const [showLinkTaskModal, setShowLinkTaskModal] = useState(false);
+  const [availableTasks, setAvailableTasks] = useState<any[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [linkingTask, setLinkingTask] = useState(false);
 
   useEffect(() => {
     loadTaskDetails();
@@ -274,6 +278,71 @@ export default function TaskDetails() {
     } finally {
       setCreatingSubtask(false);
     }
+  };
+
+  const loadAvailableTasks = async () => {
+    try {
+      setLoadingTasks(true);
+      const token = await AsyncStorage.getItem("authToken");
+      const response = await axios.get(
+        `http://${IP}:5555/task/${id}/available-subtasks`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setAvailableTasks(response.data);
+    } catch (error) {
+      console.error("Error loading available tasks:", error);
+      Alert.alert("Error", "Failed to load available tasks");
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
+
+  const handleLinkTask = async (taskId: string) => {
+    try {
+      setLinkingTask(true);
+      const token = await AsyncStorage.getItem("authToken");
+      await axios.post(
+        `http://${IP}:5555/task/${id}/subtask/link`,
+        { subtaskId: taskId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setShowLinkTaskModal(false);
+      loadTaskDetails();
+      Alert.alert("Success", "Task linked successfully");
+    } catch (error: any) {
+      console.error("Error linking task:", error);
+      Alert.alert("Error", error.response?.data?.message || "Failed to link task");
+    } finally {
+      setLinkingTask(false);
+    }
+  };
+
+  const handleUnlinkSubtask = async (subtaskId: string) => {
+    Alert.alert(
+      "Unlink Subtask",
+      "Are you sure you want to unlink this subtask? It will become an independent task.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Unlink",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const token = await AsyncStorage.getItem("authToken");
+              await axios.delete(
+                `http://${IP}:5555/task/${id}/subtask/${subtaskId}/unlink`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              loadTaskDetails();
+              Alert.alert("Success", "Subtask unlinked successfully");
+            } catch (error) {
+              console.error("Error unlinking subtask:", error);
+              Alert.alert("Error", "Failed to unlink subtask");
+            }
+          },
+        },
+      ]
+    );
   };
 
   const formatDate = (dateString: string) => {
@@ -539,9 +608,23 @@ export default function TaskDetails() {
 
         {/* Subtasks Section */}
         <View style={styles.subtasksSection}>
-          <Text style={styles.sectionTitle}>
-            Subtasks ({task.subtasks?.length || 0})
-          </Text>
+          <View style={styles.subtasksSectionHeader}>
+            <Text style={styles.sectionTitle}>
+              Subtasks ({task.subtasks?.length || 0})
+            </Text>
+            {canEdit && (
+              <TouchableOpacity
+                style={styles.linkTaskButton}
+                onPress={() => {
+                  setShowLinkTaskModal(true);
+                  loadAvailableTasks();
+                }}
+              >
+                <Ionicons name="link-outline" size={18} color={COLORS.primary} />
+                <Text style={styles.linkTaskButtonText}>Link Task</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
           {/* Add Subtask */}
           {canEdit && (
@@ -578,15 +661,15 @@ export default function TaskDetails() {
           ) : (
             <View style={styles.subtasksList}>
               {task.subtasks.map((subtask) => (
-                <TouchableOpacity
-                  key={subtask._id}
-                  style={styles.subtaskCard}
-                  onPress={() => router.push({ pathname: "/taskdetails", params: { id: subtask._id } })}
-                >
-                  <View style={styles.subtaskHeader}>
-                    <Ionicons name="git-branch-outline" size={16} color={COLORS.textLight} />
-                    <Text style={styles.subtaskTitle}>{subtask.title}</Text>
-                  </View>
+                <View key={subtask._id} style={styles.subtaskCard}>
+                  <TouchableOpacity
+                    style={styles.subtaskCardContent}
+                    onPress={() => router.push({ pathname: "/taskdetails", params: { id: subtask._id } })}
+                  >
+                    <View style={styles.subtaskHeader}>
+                      <Ionicons name="git-branch-outline" size={16} color={COLORS.textLight} />
+                      <Text style={styles.subtaskTitle}>{subtask.title}</Text>
+                    </View>
                   
                   <View style={styles.subtaskMeta}>
                     <View style={styles.subtaskStatus}>
@@ -625,7 +708,21 @@ export default function TaskDetails() {
                       </Text>
                     </View>
                   )}
-                </TouchableOpacity>
+                  </TouchableOpacity>
+
+                  {/* Unlink Button */}
+                  {canEdit && (
+                    <TouchableOpacity
+                      style={styles.unlinkButton}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleUnlinkSubtask(subtask._id);
+                      }}
+                    >
+                      <Ionicons name="unlink-outline" size={18} color={COLORS.danger} />
+                    </TouchableOpacity>
+                  )}
+                </View>
               ))}
             </View>
           )}
@@ -718,6 +815,58 @@ export default function TaskDetails() {
             <TouchableOpacity
               style={styles.cancelButton}
               onPress={() => setShowStatusModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Link Task Modal */}
+      <Modal visible={showLinkTaskModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Link Existing Task</Text>
+            
+            {loadingTasks ? (
+              <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 40 }} />
+            ) : availableTasks.length === 0 ? (
+              <View style={{ alignItems: "center", paddingVertical: 40 }}>
+                <Ionicons name="folder-open-outline" size={48} color={COLORS.textLight} />
+                <Text style={{ fontSize: 16, color: COLORS.textLight, marginTop: 12 }}>
+                  No available tasks to link
+                </Text>
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 400 }}>
+                {availableTasks.map((availableTask) => (
+                  <TouchableOpacity
+                    key={availableTask._id}
+                    style={styles.availableTaskItem}
+                    onPress={() => handleLinkTask(availableTask._id)}
+                    disabled={linkingTask}
+                  >
+                    <View style={styles.availableTaskContent}>
+                      <Text style={styles.availableTaskTitle}>{availableTask.title}</Text>
+                      <Text style={styles.availableTaskDescription} numberOfLines={2}>
+                        {availableTask.description}
+                      </Text>
+                      <View style={styles.availableTaskMeta}>
+                        <View style={styles.availableTaskStatus}>
+                          <Text style={styles.availableTaskStatusText}>{availableTask.status}</Text>
+                        </View>
+                        <Text style={styles.availableTaskProgress}>{availableTask.progressPercentage}%</Text>
+                      </View>
+                    </View>
+                    <Ionicons name="add-circle-outline" size={24} color={COLORS.primary} />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setShowLinkTaskModal(false)}
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
@@ -1186,12 +1335,43 @@ const styles = StyleSheet.create({
   subtasksList: {
     gap: 12,
   },
+  subtasksSectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  linkTaskButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: COLORS.primary + "10",
+    borderRadius: 8,
+  },
+  linkTaskButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.primary,
+  },
   subtaskCard: {
     backgroundColor: COLORS.background,
-    padding: 16,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    position: "relative",
+  },
+  subtaskCardContent: {
+    flex: 1,
+    padding: 16,
+  },
+  unlinkButton: {
+    padding: 12,
+    justifyContent: "center",
+    alignItems: "center",
   },
   subtaskHeader: {
     flexDirection: "row",
@@ -1300,5 +1480,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: COLORS.text,
+  },
+  // Available tasks modal styles
+  availableTaskItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+    marginBottom: 12,
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  availableTaskContent: {
+    flex: 1,
+  },
+  availableTaskTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  availableTaskDescription: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginBottom: 8,
+  },
+  availableTaskMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  availableTaskStatus: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: COLORS.primary + "20",
+    borderRadius: 6,
+  },
+  availableTaskStatusText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.primary,
+  },
+  availableTaskProgress: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.textSecondary,
   },
 });

@@ -46,6 +46,62 @@ const uploadToCloudinary = (buffer, folder) => {
   });
 };
 
+// Helper function to calculate task progress including subtasks
+const calculateTaskProgress = async (task) => {
+  let checklistProgress = 0;
+  let subtaskProgress = 0;
+  let hasChecklist = false;
+  let hasSubtasks = false;
+
+  // Calculate checklist progress
+  if (task.checklist && task.checklist.length > 0) {
+    hasChecklist = true;
+    const completedCount = task.checklist.filter(item => item.isCompleted).length;
+    checklistProgress = Math.round((completedCount / task.checklist.length) * 100);
+  }
+
+  // Calculate subtasks progress
+  if (task.subtasks && task.subtasks.length > 0) {
+    hasSubtasks = true;
+    const subtasksData = await Task.find({ _id: { $in: task.subtasks } });
+    if (subtasksData.length > 0) {
+      const totalSubtaskProgress = subtasksData.reduce((sum, subtask) => sum + (subtask.progressPercentage || 0), 0);
+      subtaskProgress = Math.round(totalSubtaskProgress / subtasksData.length);
+    }
+  }
+
+  // If both exist, calculate weighted average (50% each)
+  if (hasChecklist && hasSubtasks) {
+    return Math.round((checklistProgress * 0.5) + (subtaskProgress * 0.5));
+  }
+  // If only checklist exists
+  else if (hasChecklist) {
+    return checklistProgress;
+  }
+  // If only subtasks exist
+  else if (hasSubtasks) {
+    return subtaskProgress;
+  }
+  // If neither exists
+  return 0;
+};
+
+// Helper function to update parent task progress when subtask changes
+const updateParentTaskProgress = async (taskId) => {
+  const task = await Task.findById(taskId);
+  if (task && task.parentTask) {
+    const parentTask = await Task.findById(task.parentTask);
+    if (parentTask) {
+      parentTask.progressPercentage = await calculateTaskProgress(parentTask);
+      await parentTask.save();
+      // Recursively update if parent also has a parent
+      if (parentTask.parentTask) {
+        await updateParentTaskProgress(parentTask._id);
+      }
+    }
+  }
+};
+
 const verifyToken = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) {
@@ -845,6 +901,158 @@ app.get("/task/:id/subtasks", verifyToken, async (req, res) => {
   }
 });
 
+app.post("/task/:id/subtask", verifyToken, async (req, res) => {
+  try {
+    const { title } = req.body;
+    if (!title || !title.trim()) {
+      return res.status(400).json({ message: "Subtask title is required" });
+    }
+
+    const parentTask = await Task.findById(req.params.id);
+    if (!parentTask) {
+      return res.status(404).json({ message: "Parent task not found" });
+    }
+
+    const subtask = await Task.create({
+      title: title.trim(),
+      description: `Subtask of: ${parentTask.title}`,
+      department: parentTask.department,
+      createdBy: req.userId,
+      parentTask: parentTask._id,
+      dueDate: parentTask.dueDate,
+      startDate: new Date(),
+      status: "Open",
+      priority: "Medium",
+      color: parentTask.color || "#3B82F6",
+    });
+
+    parentTask.subtasks.push(subtask._id);
+    await parentTask.save();
+
+    const populatedSubtask = await Task.findById(subtask._id)
+      .populate("createdBy", "firstName lastName profilePhoto role")
+      .populate("assignedTo", "firstName lastName profilePhoto role");
+
+    return res.status(201).json({
+      message: "Subtask created successfully",
+      subtask: populatedSubtask,
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.post("/task/:id/subtask/link", verifyToken, async (req, res) => {
+  try {
+    const { subtaskId } = req.body;
+    if (!subtaskId) {
+      return res.status(400).json({ message: "Subtask ID is required" });
+    }
+
+    const parentTask = await Task.findById(req.params.id);
+    if (!parentTask) {
+      return res.status(404).json({ message: "Parent task not found" });
+    }
+
+    const subtask = await Task.findById(subtaskId);
+    if (!subtask) {
+      return res.status(404).json({ message: "Task to link not found" });
+    }
+
+    if (parentTask._id.toString() === subtask._id.toString()) {
+      return res.status(400).json({ message: "Cannot link a task to itself" });
+    }
+
+    if (subtask.subtasks && subtask.subtasks.includes(parentTask._id)) {
+      return res.status(400).json({ message: "Cannot create circular dependency" });
+    }
+
+    if (subtask.parentTask) {
+      return res.status(400).json({ message: "Task already has a parent task" });
+    }
+
+    subtask.parentTask = parentTask._id;
+    await subtask.save();
+
+    if (!parentTask.subtasks.includes(subtask._id)) {
+      parentTask.subtasks.push(subtask._id);
+    }
+
+    parentTask.progressPercentage = await calculateTaskProgress(parentTask);
+    await parentTask.save();
+
+    const populatedSubtask = await Task.findById(subtask._id)
+      .populate("createdBy", "firstName lastName profilePhoto role")
+      .populate("assignedTo", "firstName lastName profilePhoto role");
+
+    return res.status(200).json({
+      message: "Task linked as subtask successfully",
+      subtask: populatedSubtask,
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.get("/task/:id/available-subtasks", verifyToken, async (req, res) => {
+  try {
+    const parentTask = await Task.findById(req.params.id);
+    if (!parentTask) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+
+    const availableTasks = await Task.find({
+      _id: { $ne: req.params.id },
+      parentTask: null,
+      department: parentTask.department,
+    })
+      .populate("createdBy", "firstName lastName profilePhoto")
+      .populate("assignedTo", "firstName lastName profilePhoto")
+      .select("title description status priority progressPercentage assignedTo createdBy dueDate")
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    return res.status(200).json(availableTasks);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.delete("/task/:parentId/subtask/:subtaskId/unlink", verifyToken, async (req, res) => {
+  try {
+    const parentTask = await Task.findById(req.params.parentId);
+    if (!parentTask) {
+      return res.status(404).json({ message: "Parent task not found" });
+    }
+
+    const subtask = await Task.findById(req.params.subtaskId);
+    if (!subtask) {
+      return res.status(404).json({ message: "Subtask not found" });
+    }
+
+    subtask.parentTask = null;
+    await subtask.save();
+
+    parentTask.subtasks = parentTask.subtasks.filter(
+      id => id.toString() !== subtask._id.toString()
+    );
+
+    parentTask.progressPercentage = await calculateTaskProgress(parentTask);
+    await parentTask.save();
+
+    return res.status(200).json({
+      message: "Subtask unlinked successfully",
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 app.post("/task/:id/checklist/add", verifyToken, async (req, res) => {
   try {
     const { text } = req.body;
@@ -867,12 +1075,10 @@ app.post("/task/:id/checklist/add", verifyToken, async (req, res) => {
       createdAt: new Date(),
     });
 
-    const completedCount = task.checklist.filter(item => item.isCompleted).length;
-    task.progressPercentage = task.checklist.length > 0 
-      ? Math.round((completedCount / task.checklist.length) * 100) 
-      : 0;
-
+    task.progressPercentage = await calculateTaskProgress(task);
     await task.save();
+
+    await updateParentTaskProgress(task._id);
 
     return res.status(200).json({
       message: "Checklist item added successfully",
@@ -908,13 +1114,11 @@ app.put("/task/:taskId/checklist/:itemId/toggle", verifyToken, async (req, res) 
     item.completedAt = item.isCompleted ? new Date() : null;
     item.completedBy = item.isCompleted ? req.userId : null;
 
-    // Recalculate progress percentage
-    const completedCount = task.checklist.filter(item => item.isCompleted).length;
-    task.progressPercentage = task.checklist.length > 0 
-      ? Math.round((completedCount / task.checklist.length) * 100) 
-      : 0;
-
+    task.progressPercentage = await calculateTaskProgress(task);
     await task.save();
+
+    // Update parent task progress if this is a subtask
+    await updateParentTaskProgress(task._id);
 
     return res.status(200).json({
       message: "Checklist item updated successfully",
@@ -948,12 +1152,11 @@ app.delete("/task/:taskId/checklist/:itemId", verifyToken, async (req, res) => {
 
     task.checklist.pull(req.params.itemId);
 
-    const completedCount = task.checklist.filter(item => item.isCompleted).length;
-    task.progressPercentage = task.checklist.length > 0 
-      ? Math.round((completedCount / task.checklist.length) * 100) 
-      : 0;
-
+    task.progressPercentage = await calculateTaskProgress(task);
     await task.save();
+
+    // Update parent task progress if this is a subtask
+    await updateParentTaskProgress(task._id);
 
     return res.status(200).json({
       message: "Checklist item deleted successfully",
