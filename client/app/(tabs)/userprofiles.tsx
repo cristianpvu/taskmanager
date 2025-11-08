@@ -90,15 +90,12 @@ export default function UserProfile() {
             const token = await AsyncStorage.getItem("authToken");
             const headers = { Authorization: `Bearer ${token}` };
 
-            // Fetch user details
             const userResponse = await axios.get(`http://${IP}:5555/user/${userId}`, { headers });
             setUser(userResponse.data);
 
-            // Fetch user stats
             const statsResponse = await axios.get(`http://${IP}:5555/user/${userId}/stats`, { headers });
             setStats(statsResponse.data);
 
-            // Fetch user tasks
             const tasksResponse = await axios.get(`http://${IP}:5555/tasks/user/${userId}`, { headers });
             setAllTasks(tasksResponse.data);
         } catch (error) {

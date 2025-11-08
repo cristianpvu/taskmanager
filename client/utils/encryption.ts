@@ -6,7 +6,7 @@ import Aes from 'react-native-aes-crypto';
  * Returns a 256-bit key as base64 string
  */
 export const generateEncryptionKey = async (): Promise<string> => {
-  const randomBytes = await Crypto.getRandomBytesAsync(32); // 256 bits
+  const randomBytes = await Crypto.getRandomBytesAsync(32);
   return btoa(String.fromCharCode(...randomBytes));
 };
 

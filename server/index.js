@@ -1302,7 +1302,6 @@ app.put("/task/:id/assign-user", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Target user not found" });
     }
 
-    // If task has group assignment, validate group membership
     const hasGroupAssignment = task.assignedGroups && task.assignedGroups.length > 0;
     
     if (hasGroupAssignment) {
@@ -1510,7 +1509,6 @@ app.post("/task/:id/upload", verifyToken, upload.array("files", 10), async (req,
       fileNames.push(file.originalname);
     }
     
-    // Log activity
     task.activityLog.push({
       type: "attachment_added",
       user: req.userId,
@@ -1538,7 +1536,6 @@ app.delete("/task/:taskId/attachment/:attachmentId", verifyToken, async (req, re
       await cloudinary.uploader.destroy(attachment.publicId);
       attachment.remove();
       
-      // Log activity
       task.activityLog.push({
         type: "attachment_deleted",
         user: req.userId,
@@ -1631,7 +1628,6 @@ app.post("/task/:id/subtask", verifyToken, async (req, res) => {
 
     parentTask.subtasks.push(subtask._id);
     
-    // Log activity
     parentTask.activityLog.push({
       type: "subtask_added",
       user: req.userId,
@@ -1692,7 +1688,6 @@ app.post("/task/:id/subtask/link", verifyToken, async (req, res) => {
       parentTask.subtasks.push(subtask._id);
     }
 
-    // Log activity
     parentTask.activityLog.push({
       type: "subtask_linked",
       user: req.userId,
@@ -1765,7 +1760,6 @@ app.delete("/task/:parentId/subtask/:subtaskId/unlink", verifyToken, async (req,
       id => id.toString() !== subtask._id.toString()
     );
 
-    // Log activity
     parentTask.activityLog.push({
       type: "subtask_unlinked",
       user: req.userId,
@@ -1808,7 +1802,6 @@ app.post("/task/:id/checklist/add", verifyToken, async (req, res) => {
       createdAt: new Date(),
     });
 
-    // Log activity
     task.activityLog.push({
       type: "checklist_added",
       user: req.userId,
@@ -1857,7 +1850,6 @@ app.put("/task/:taskId/checklist/:itemId/toggle", verifyToken, async (req, res) 
     item.completedAt = item.isCompleted ? new Date() : null;
     item.completedBy = item.isCompleted ? req.userId : null;
 
-    // Log activity
     task.activityLog.push({
       type: item.isCompleted ? "checklist_completed" : "checklist_uncompleted",
       user: req.userId,
@@ -1909,7 +1901,6 @@ app.delete("/task/:taskId/checklist/:itemId", verifyToken, async (req, res) => {
     const itemText = itemExists.text;
     task.checklist.pull(req.params.itemId);
 
-    // Log activity
     task.activityLog.push({
       type: "checklist_deleted",
       user: req.userId,

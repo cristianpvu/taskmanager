@@ -190,10 +190,8 @@ export default function TaskDetails() {
         taskData.checklist = [];
       }
 
-      // Decrypt if encrypted and user is not CEO
       if (taskData.titleEncrypted && !taskData.title) {
         try {
-          // Get encryption key from the first assigned group
           if (taskData.assignedGroups && taskData.assignedGroups.length > 0) {
             const groupId = taskData.assignedGroups[0]._id || taskData.assignedGroups[0];
             const keyResponse = await axios.get(
@@ -203,7 +201,6 @@ export default function TaskDetails() {
             
             const encryptionKey = keyResponse.data.encryptionKey;
             
-            // Decrypt title and description
             taskData.title = await decryptText(taskData.titleEncrypted, encryptionKey);
             taskData.description = await decryptText(taskData.descriptionEncrypted, encryptionKey);
           }
@@ -232,12 +229,10 @@ export default function TaskDetails() {
       
       const commentsData = response.data;
 
-      // Decrypt comments if needed
       const decryptedComments = await Promise.all(
         commentsData.map(async (comment: any) => {
           if (comment.contentEncrypted && !comment.content) {
             try {
-              // Get task to find encryption key
               const taskResponse = await axios.get(`http://${IP}:5555/task/${id}`, {
                 headers: { Authorization: `Bearer ${token}` },
               });
@@ -290,7 +285,7 @@ export default function TaskDetails() {
       );
       setTask((prev) => (prev ? { ...prev, status: newStatus } : null));
       setShowStatusModal(false);
-      loadActivityLog(); // Reload activity log
+      loadActivityLog();
       Alert.alert("Success", "Status updated successfully");
     } catch (error) {
       console.error("Error updating status:", error);
@@ -335,7 +330,7 @@ export default function TaskDetails() {
       );
       setNewComment("");
       loadComments();
-      loadActivityLog(); // Reload activity log
+      loadActivityLog();
       Alert.alert("Success", "Comment added successfully");
     } catch (error) {
       console.error("Error adding comment:", error);
@@ -513,7 +508,6 @@ export default function TaskDetails() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
-      // Filter users based on current user's role hierarchy
       const filteredUsers = filterAssignableUsers(response.data, user?.role || "");
       setAvailableUsers(filteredUsers);
     } catch (error) {
@@ -2008,7 +2002,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: COLORS.textSecondary,
   },
-  // Reassign styles
   reassignContainer: {
     marginTop: 16,
     paddingTop: 16,
@@ -2138,7 +2131,6 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: COLORS.border,
   },
-  // Activity log styles
   activityItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
