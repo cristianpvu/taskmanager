@@ -59,6 +59,24 @@ interface Subtask {
   assignedTo: any[];
 }
 
+interface ReassignHistory {
+  _id: string;
+  reassignedBy: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    profilePhoto?: string;
+  };
+  reassignedTo: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    profilePhoto?: string;
+  };
+  reassignedAt: string;
+  reason: string;
+}
+
 interface Task {
   _id: string;
   title: string;
@@ -87,6 +105,8 @@ interface Task {
     _id: string;
     title: string;
   };
+  reassignCount: number;
+  reassignHistory: ReassignHistory[];
   createdAt: string;
 }
 
@@ -120,6 +140,11 @@ export default function TaskDetails() {
   const [availableTasks, setAvailableTasks] = useState<any[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [linkingTask, setLinkingTask] = useState(false);
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
+  const [reassignReason, setReassignReason] = useState("");
 
   useEffect(() => {
     loadTaskDetails();
@@ -345,6 +370,44 @@ export default function TaskDetails() {
     );
   };
 
+  const loadAvailableUsers = async () => {
+    try {
+      setLoadingUsers(true);
+      const token = await AsyncStorage.getItem("authToken");
+      const response = await axios.get(
+        `http://${IP}:5555/task/${id}/available-assignees`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setAvailableUsers(response.data);
+    } catch (error) {
+      console.error("Error loading available users:", error);
+      Alert.alert("Error", "Failed to load available users");
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleReassign = async (userId: string) => {
+    try {
+      setReassigning(true);
+      const token = await AsyncStorage.getItem("authToken");
+      await axios.put(
+        `http://${IP}:5555/task/${id}/reassign`,
+        { userId, reason: reassignReason },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setShowReassignModal(false);
+      setReassignReason("");
+      loadTaskDetails();
+      Alert.alert("Success", "Task reassigned successfully");
+    } catch (error: any) {
+      console.error("Error reassigning task:", error);
+      Alert.alert("Error", error.response?.data?.message || "Failed to reassign task");
+    } finally {
+      setReassigning(false);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("ro-RO", {
@@ -464,6 +527,38 @@ export default function TaskDetails() {
               ))}
             </View>
           )}
+
+          {/* Reassign Button */}
+          {canEdit && (
+            <View style={styles.reassignContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.reassignButton,
+                  task.reassignCount >= 3 && styles.reassignButtonDisabled,
+                ]}
+                onPress={() => {
+                  setShowReassignModal(true);
+                  loadAvailableUsers();
+                }}
+                disabled={task.reassignCount >= 3}
+              >
+                <Ionicons 
+                  name="swap-horizontal-outline" 
+                  size={18} 
+                  color={task.reassignCount >= 3 ? COLORS.textLight : COLORS.primary} 
+                />
+                <Text style={[
+                  styles.reassignButtonText,
+                  task.reassignCount >= 3 && styles.reassignButtonTextDisabled,
+                ]}>
+                  Reassign ({task.reassignCount || 0}/3)
+                </Text>
+              </TouchableOpacity>
+              {task.reassignCount >= 3 && (
+                <Text style={styles.reassignLimitText}>Reassign limit reached</Text>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Task Info */}
@@ -530,6 +625,40 @@ export default function TaskDetails() {
               </View>
             </View>
           </View>
+
+          {/* Reassign History */}
+          {task.reassignHistory && task.reassignHistory.length > 0 && (
+            <View style={styles.infoRow}>
+              <Ionicons name="git-network-outline" size={20} color={COLORS.textLight} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Reassign History</Text>
+                <View style={styles.historyList}>
+                  {task.reassignHistory.map((history, index) => (
+                    <View key={history._id} style={styles.historyItem}>
+                      <View style={styles.historyDot} />
+                      <View style={styles.historyContent}>
+                        <Text style={styles.historyText}>
+                          <Text style={styles.historyBold}>
+                            {history.reassignedBy.firstName} {history.reassignedBy.lastName}
+                          </Text>
+                          {" → "}
+                          <Text style={styles.historyBold}>
+                            {history.reassignedTo.firstName} {history.reassignedTo.lastName}
+                          </Text>
+                        </Text>
+                        <Text style={styles.historyTime}>
+                          {formatRelativeTime(history.reassignedAt)}
+                        </Text>
+                        {history.reason && (
+                          <Text style={styles.historyReason}>{history.reason}</Text>
+                        )}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Checklist Section */}
@@ -867,6 +996,74 @@ export default function TaskDetails() {
             <TouchableOpacity
               style={styles.cancelButton}
               onPress={() => setShowLinkTaskModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Reassign Modal */}
+      <Modal visible={showReassignModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Reassign Task</Text>
+            <Text style={styles.modalSubtitle}>
+              Reassigns remaining: {3 - (task?.reassignCount || 0)}/3
+            </Text>
+
+            {/* Optional Reason Input */}
+            <TextInput
+              style={styles.reasonInput}
+              placeholder="Reason for reassignment (optional)"
+              value={reassignReason}
+              onChangeText={setReassignReason}
+              placeholderTextColor={COLORS.textLight}
+              multiline
+            />
+            
+            {loadingUsers ? (
+              <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 40 }} />
+            ) : availableUsers.length === 0 ? (
+              <View style={{ alignItems: "center", paddingVertical: 40 }}>
+                <Ionicons name="people-outline" size={48} color={COLORS.textLight} />
+                <Text style={{ fontSize: 16, color: COLORS.textLight, marginTop: 12 }}>
+                  No available users in this department
+                </Text>
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 350 }}>
+                {availableUsers.map((availableUser) => (
+                  <TouchableOpacity
+                    key={availableUser._id}
+                    style={styles.userItem}
+                    onPress={() => handleReassign(availableUser._id)}
+                    disabled={reassigning}
+                  >
+                    <View style={styles.userAvatar}>
+                      <Text style={styles.userAvatarText}>
+                        {availableUser.firstName[0]}
+                        {availableUser.lastName[0]}
+                      </Text>
+                    </View>
+                    <View style={styles.userInfo}>
+                      <Text style={styles.userName}>
+                        {availableUser.firstName} {availableUser.lastName}
+                      </Text>
+                      <Text style={styles.userRole}>{availableUser.role}</Text>
+                    </View>
+                    <Ionicons name="arrow-forward-circle-outline" size={24} color={COLORS.primary} />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => {
+                setShowReassignModal(false);
+                setReassignReason("");
+              }}
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
@@ -1527,5 +1724,135 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: COLORS.textSecondary,
+  },
+  // Reassign styles
+  reassignContainer: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  reassignButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: COLORS.primary + "10",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "30",
+  },
+  reassignButtonDisabled: {
+    backgroundColor: COLORS.background,
+    borderColor: COLORS.border,
+    opacity: 0.5,
+  },
+  reassignButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.primary,
+  },
+  reassignButtonTextDisabled: {
+    color: COLORS.textLight,
+  },
+  reassignLimitText: {
+    fontSize: 12,
+    color: COLORS.danger,
+    marginTop: 6,
+    fontStyle: "italic",
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginBottom: 16,
+  },
+  reasonInput: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    color: COLORS.text,
+    maxHeight: 80,
+    marginBottom: 16,
+  },
+  userItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+    marginBottom: 12,
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  userAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  userAvatarText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  userInfo: {
+    flex: 1,
+  },
+  userName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: COLORS.text,
+    marginBottom: 2,
+  },
+  userRole: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  historyList: {
+    gap: 12,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  historyDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.primary,
+    marginTop: 6,
+  },
+  historyContent: {
+    flex: 1,
+  },
+  historyText: {
+    fontSize: 14,
+    color: COLORS.text,
+    lineHeight: 20,
+  },
+  historyBold: {
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  historyTime: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginTop: 2,
+  },
+  historyReason: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    fontStyle: 'italic',
+    marginTop: 4,
+    paddingLeft: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: COLORS.border,
   },
 });
