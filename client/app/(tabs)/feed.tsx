@@ -19,6 +19,7 @@ import axios from "axios";
 import { IP } from "@/data/ip";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
+import { encryptText } from "@/utils/encryption";
 
 const COLORS = {
   primary: "#2563EB",
@@ -276,6 +277,39 @@ export default function Feed() {
         payload.isOpenForClaims = false;
         payload.assignedGroups = selectedGroups.map((g) => g._id);
         payload.assignedTo = [];
+
+        // Encrypt data for group tasks
+        if (selectedGroups.length > 0) {
+          try {
+            console.log('🔐 Starting encryption for group task...');
+            console.log('Selected groups:', selectedGroups);
+            
+            // Get encryption key for the first group
+            const groupId = selectedGroups[0]._id;
+            console.log('Getting encryption key for group:', groupId);
+            
+            const keyResponse = await axios.get(
+              `http://${IP}:5555/group/${groupId}/encryption-key`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            
+            const encryptionKey = keyResponse.data.encryptionKey;
+            console.log('✓ Got encryption key:', encryptionKey?.substring(0, 20) + '...');
+            
+            // Encrypt title and description
+            console.log('Encrypting title and description...');
+            payload.titleEncrypted = await encryptText(title, encryptionKey);
+            payload.descriptionEncrypted = await encryptText(description, encryptionKey);
+            console.log('✅ Encryption successful!');
+            console.log('titleEncrypted:', payload.titleEncrypted?.substring(0, 40) + '...');
+          } catch (encError: any) {
+            console.error("❌ Encryption error:", encError);
+            console.error("Error details:", encError.response?.data || encError.message);
+            // If encryption fails, continue without encryption
+          }
+        } else {
+          console.log('⚠️ No groups selected, skipping encryption');
+        }
       } else if (assignmentType === "individuals") {
         payload.isOpenForClaims = false;
         payload.assignedTo = selectedUsers.map((u) => u._id);
