@@ -50,6 +50,15 @@ interface ChecklistItem {
   completedAt?: string;
 }
 
+interface Subtask {
+  _id: string;
+  title: string;
+  status: string;
+  priority: string;
+  progressPercentage: number;
+  assignedTo: any[];
+}
+
 interface Task {
   _id: string;
   title: string;
@@ -73,6 +82,11 @@ interface Task {
   isClaimed: boolean;
   progressPercentage: number;
   checklist: ChecklistItem[];
+  subtasks: Subtask[];
+  parentTask?: {
+    _id: string;
+    title: string;
+  };
   createdAt: string;
 }
 
@@ -100,6 +114,8 @@ export default function TaskDetails() {
   const [sendingComment, setSendingComment] = useState(false);
   const [newChecklistItem, setNewChecklistItem] = useState("");
   const [addingChecklistItem, setAddingChecklistItem] = useState(false);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [creatingSubtask, setCreatingSubtask] = useState(false);
 
   useEffect(() => {
     loadTaskDetails();
@@ -236,6 +252,30 @@ export default function TaskDetails() {
     }
   };
 
+  const handleCreateSubtask = async () => {
+    if (!newSubtaskTitle.trim()) {
+      Alert.alert("Error", "Please enter a subtask title");
+      return;
+    }
+
+    try {
+      setCreatingSubtask(true);
+      const token = await AsyncStorage.getItem("authToken");
+      await axios.post(
+        `http://${IP}:5555/task/${id}/subtask`,
+        { title: newSubtaskTitle },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setNewSubtaskTitle("");
+      loadTaskDetails();
+    } catch (error) {
+      console.error("Error creating subtask:", error);
+      Alert.alert("Error", "Failed to create subtask");
+    } finally {
+      setCreatingSubtask(false);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("ro-RO", {
@@ -303,6 +343,21 @@ export default function TaskDetails() {
       </View>
 
       <ScrollView style={styles.content}>
+        {/* Parent Task Reference */}
+        {task.parentTask && (
+          <TouchableOpacity
+            style={styles.parentTaskBanner}
+            onPress={() => router.push({ pathname: "/taskdetails", params: { id: task.parentTask?._id || "" } })}
+          >
+            <Ionicons name="git-branch-outline" size={20} color={COLORS.primary} />
+            <View style={styles.parentTaskInfo}>
+              <Text style={styles.parentTaskLabel}>Part of</Text>
+              <Text style={styles.parentTaskTitle}>{task.parentTask?.title || ""}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={COLORS.primary} />
+          </TouchableOpacity>
+        )}
+
         {/* Task Header */}
         <View style={[styles.taskHeader, { borderLeftColor: task.color }]}>
           <View style={styles.taskHeaderTop}>
@@ -477,6 +532,100 @@ export default function TaskDetails() {
                     </TouchableOpacity>
                   )}
                 </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Subtasks Section */}
+        <View style={styles.subtasksSection}>
+          <Text style={styles.sectionTitle}>
+            Subtasks ({task.subtasks?.length || 0})
+          </Text>
+
+          {/* Add Subtask */}
+          {canEdit && (
+            <View style={styles.addSubtaskContainer}>
+              <TextInput
+                style={styles.subtaskInput}
+                placeholder="Add a subtask..."
+                value={newSubtaskTitle}
+                onChangeText={setNewSubtaskTitle}
+                placeholderTextColor={COLORS.textLight}
+                onSubmitEditing={handleCreateSubtask}
+                returnKeyType="done"
+              />
+              <TouchableOpacity
+                style={styles.addSubtaskButton}
+                onPress={handleCreateSubtask}
+                disabled={creatingSubtask}
+              >
+                {creatingSubtask ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Ionicons name="add" size={20} color={COLORS.white} />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Subtasks List */}
+          {!task.subtasks || task.subtasks.length === 0 ? (
+            <View style={styles.emptySubtasks}>
+              <Ionicons name="git-branch-outline" size={48} color={COLORS.textLight} />
+              <Text style={styles.emptySubtasksText}>No subtasks yet</Text>
+            </View>
+          ) : (
+            <View style={styles.subtasksList}>
+              {task.subtasks.map((subtask) => (
+                <TouchableOpacity
+                  key={subtask._id}
+                  style={styles.subtaskCard}
+                  onPress={() => router.push({ pathname: "/taskdetails", params: { id: subtask._id } })}
+                >
+                  <View style={styles.subtaskHeader}>
+                    <Ionicons name="git-branch-outline" size={16} color={COLORS.textLight} />
+                    <Text style={styles.subtaskTitle}>{subtask.title}</Text>
+                  </View>
+                  
+                  <View style={styles.subtaskMeta}>
+                    <View style={styles.subtaskStatus}>
+                      <Text style={styles.subtaskStatusText}>{subtask.status}</Text>
+                    </View>
+                    <View style={styles.subtaskPriority}>
+                      <View
+                        style={[
+                          styles.priorityDot,
+                          { backgroundColor: PRIORITY_COLORS[subtask.priority as keyof typeof PRIORITY_COLORS] },
+                        ]}
+                      />
+                      <Text style={styles.subtaskPriorityText}>{subtask.priority}</Text>
+                    </View>
+                  </View>
+
+                  {/* Progress Bar */}
+                  <View style={styles.subtaskProgressContainer}>
+                    <View style={styles.subtaskProgressBar}>
+                      <View
+                        style={[
+                          styles.subtaskProgressFill,
+                          { width: `${subtask.progressPercentage}%` },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.subtaskProgressText}>{subtask.progressPercentage}%</Text>
+                  </View>
+
+                  {/* Assigned Users */}
+                  {subtask.assignedTo && subtask.assignedTo.length > 0 && (
+                    <View style={styles.subtaskAssigned}>
+                      <Ionicons name="people-outline" size={14} color={COLORS.textLight} />
+                      <Text style={styles.subtaskAssignedText}>
+                        {subtask.assignedTo.length} assigned
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
               ))}
             </View>
           )}
@@ -994,5 +1143,162 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: COLORS.textSecondary,
+  },
+  // Subtasks styles
+  subtasksSection: {
+    backgroundColor: COLORS.white,
+    padding: 16,
+    marginBottom: 16,
+    borderRadius: 12,
+  },
+  addSubtaskContainer: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 16,
+  },
+  subtaskInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  addSubtaskButton: {
+    width: 40,
+    height: 40,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptySubtasks: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  emptySubtasksText: {
+    fontSize: 16,
+    color: COLORS.textLight,
+    marginTop: 12,
+  },
+  subtasksList: {
+    gap: 12,
+  },
+  subtaskCard: {
+    backgroundColor: COLORS.background,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  subtaskHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  subtaskTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: COLORS.text,
+    flex: 1,
+  },
+  subtaskMeta: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 12,
+  },
+  subtaskStatus: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: COLORS.primary + "20",
+    borderRadius: 6,
+  },
+  subtaskStatusText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.primary,
+  },
+  subtaskPriority: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: COLORS.white,
+    borderRadius: 6,
+  },
+  priorityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  subtaskPriorityText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.text,
+  },
+  subtaskProgressContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  subtaskProgressBar: {
+    flex: 1,
+    height: 6,
+    backgroundColor: COLORS.border,
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  subtaskProgressFill: {
+    height: "100%",
+    backgroundColor: COLORS.success,
+    borderRadius: 3,
+  },
+  subtaskProgressText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.textSecondary,
+    minWidth: 35,
+    textAlign: "right",
+  },
+  subtaskAssigned: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  subtaskAssignedText: {
+    fontSize: 12,
+    color: COLORS.textLight,
+  },
+  // Parent task styles
+  parentTaskBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.primary + "10",
+    padding: 12,
+    marginBottom: 16,
+    borderRadius: 12,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "30",
+  },
+  parentTaskInfo: {
+    flex: 1,
+  },
+  parentTaskLabel: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    textTransform: "uppercase",
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  parentTaskTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.text,
   },
 });
