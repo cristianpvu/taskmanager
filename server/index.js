@@ -385,7 +385,43 @@ app.get("/group/:id", verifyToken, async (req, res) => {
     if (!group) {
       return res.status(404).json({ message: "Group not found" });
     }
+    group.members = group.members.filter(member => member != null);
     return res.status(200).json(group);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+app.get("/tasks/group/:groupId", verifyToken, async (req, res) => {
+  try {
+    const { status, priority } = req.query;
+    
+    let query = {
+      assignedGroups: req.params.groupId,
+      isArchived: false
+    };
+    
+    if (status) {
+      query.status = status;
+    }
+    if (priority) {
+      query.priority = priority;
+    }
+    
+    const tasks = await Task.find(query)
+      .sort({ dueDate: 1 })
+      .populate("createdBy", "firstName lastName profilePhoto role")
+      .populate("assignedTo", "firstName lastName profilePhoto role")
+      .populate("assignedGroups", "name department _id")
+      .populate({
+        path: "subtasks",
+        populate: {
+          path: "assignedTo",
+          select: "firstName lastName profilePhoto"
+        }
+      });
+    
+    return res.status(200).json(tasks);
   } catch (error) {
     console.log(error.message);
     res.status(500).json({ message: error.message });

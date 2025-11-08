@@ -122,7 +122,8 @@ interface Comment {
 }
 
 export default function TaskDetails() {
-  const { id } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const { id, returnToGroup } = params;
   const router = useRouter();
   const { user } = useAuth();
   
@@ -159,7 +160,6 @@ export default function TaskDetails() {
       const response = await axios.get(`http://${IP}:5555/task/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      // Initialize checklist if it doesn't exist (for old tasks)
       const taskData = response.data;
       if (!taskData.checklist) {
         taskData.checklist = [];
@@ -256,7 +256,6 @@ export default function TaskDetails() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setNewChecklistItem("");
-      // Reload task to get fully populated data
       loadTaskDetails();
     } catch (error) {
       console.error("Error adding checklist item:", error);
@@ -274,7 +273,6 @@ export default function TaskDetails() {
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      // Reload task to get fully populated data
       loadTaskDetails();
     } catch (error) {
       console.error("Error toggling checklist item:", error);
@@ -289,7 +287,6 @@ export default function TaskDetails() {
         `http://${IP}:5555/task/${id}/checklist/${itemId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      // Reload task to get fully populated data
       loadTaskDetails();
     } catch (error) {
       console.error("Error deleting checklist item:", error);
@@ -384,6 +381,17 @@ export default function TaskDetails() {
         },
       ]
     );
+  };
+
+  const handleBackPress = () => {
+    if (returnToGroup && typeof returnToGroup === 'string') {
+      router.push({
+        pathname: "/groups",
+        params: { returnToGroup: returnToGroup }
+      } as any);
+    } else {
+      router.back();
+    }
   };
 
   const loadAvailableUsers = async () => {
@@ -494,7 +502,7 @@ export default function TaskDetails() {
         <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
         <Ionicons name="alert-circle-outline" size={64} color={COLORS.danger} />
         <Text style={styles.errorText}>Task not found</Text>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
           <Text style={styles.backButtonText}>Go Back</Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -509,9 +517,8 @@ export default function TaskDetails() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
       <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+        <TouchableOpacity onPress={handleBackPress} style={styles.headerButton}>
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Task Details</Text>
@@ -519,11 +526,16 @@ export default function TaskDetails() {
       </View>
 
       <ScrollView style={styles.content}>
-        {/* Parent Task Reference */}
         {task.parentTask && (
           <TouchableOpacity
             style={styles.parentTaskBanner}
-            onPress={() => router.push({ pathname: "/taskdetails", params: { id: task.parentTask?._id || "" } })}
+            onPress={() => router.push({ 
+              pathname: "/taskdetails", 
+              params: { 
+                id: task.parentTask?._id || "",
+                returnToGroup: returnToGroup 
+              } 
+            })}
           >
             <Ionicons name="git-branch-outline" size={20} color={COLORS.primary} />
             <View style={styles.parentTaskInfo}>
@@ -534,7 +546,6 @@ export default function TaskDetails() {
           </TouchableOpacity>
         )}
 
-        {/* Task Header */}
         <View style={[styles.taskHeader, { borderLeftColor: task.color }]}>
           <View style={styles.taskHeaderTop}>
             <View style={styles.badges}>
@@ -561,7 +572,6 @@ export default function TaskDetails() {
           <Text style={styles.title}>{task.title}</Text>
           <Text style={styles.description}>{task.description}</Text>
 
-          {/* Tags */}
           {task.tags.length > 0 && (
             <View style={styles.tagsContainer}>
               {task.tags.map((tag, index) => (
@@ -605,7 +615,6 @@ export default function TaskDetails() {
           )}
         </View>
 
-        {/* Task Info */}
         <View style={styles.infoSection}>
           <View style={styles.infoRow}>
             <Ionicons name="calendar-outline" size={20} color={COLORS.textLight} />
@@ -705,13 +714,11 @@ export default function TaskDetails() {
           )}
         </View>
 
-        {/* Checklist Section */}
         <View style={styles.checklistSection}>
           <Text style={styles.sectionTitle}>
             Checklist ({task.checklist?.filter(item => item.isCompleted).length || 0}/{task.checklist?.length || 0})
           </Text>
 
-          {/* Add Checklist Item */}
           {canEdit && (
             <View style={styles.addChecklistContainer}>
               <TextInput
@@ -736,7 +743,6 @@ export default function TaskDetails() {
             </View>
           )}
 
-          {/* Checklist Items */}
           {!task.checklist || task.checklist.length === 0 ? (
             <View style={styles.emptyChecklist}>
               <Ionicons name="checkbox-outline" size={48} color={COLORS.textLight} />
@@ -779,7 +785,6 @@ export default function TaskDetails() {
           )}
         </View>
 
-        {/* Subtasks Section */}
         <View style={styles.subtasksSection}>
           <View style={styles.subtasksSectionHeader}>
             <Text style={styles.sectionTitle}>
@@ -799,7 +804,6 @@ export default function TaskDetails() {
             )}
           </View>
 
-          {/* Add Subtask */}
           {canEdit && (
             <View style={styles.addSubtaskContainer}>
               <TextInput
@@ -825,7 +829,6 @@ export default function TaskDetails() {
             </View>
           )}
 
-          {/* Subtasks List */}
           {!task.subtasks || task.subtasks.length === 0 ? (
             <View style={styles.emptySubtasks}>
               <Ionicons name="git-branch-outline" size={48} color={COLORS.textLight} />
@@ -837,7 +840,13 @@ export default function TaskDetails() {
                 <View key={subtask._id} style={styles.subtaskCard}>
                   <TouchableOpacity
                     style={styles.subtaskCardContent}
-                    onPress={() => router.push({ pathname: "/taskdetails", params: { id: subtask._id } })}
+                    onPress={() => router.push({ 
+                      pathname: "/taskdetails", 
+                      params: { 
+                        id: subtask._id,
+                        returnToGroup: returnToGroup 
+                      } 
+                    })}
                   >
                     <View style={styles.subtaskHeader}>
                       <Ionicons name="git-branch-outline" size={16} color={COLORS.textLight} />
@@ -859,7 +868,6 @@ export default function TaskDetails() {
                     </View>
                   </View>
 
-                  {/* Progress Bar */}
                   <View style={styles.subtaskProgressContainer}>
                     <View style={styles.subtaskProgressBar}>
                       <View
@@ -872,7 +880,6 @@ export default function TaskDetails() {
                     <Text style={styles.subtaskProgressText}>{subtask.progressPercentage}%</Text>
                   </View>
 
-                  {/* Assigned Users */}
                   {subtask.assignedTo && subtask.assignedTo.length > 0 && (
                     <View style={styles.subtaskAssigned}>
                       <Ionicons name="people-outline" size={14} color={COLORS.textLight} />
@@ -883,7 +890,6 @@ export default function TaskDetails() {
                   )}
                   </TouchableOpacity>
 
-                  {/* Unlink Button */}
                   {canEdit && (
                     <TouchableOpacity
                       style={styles.unlinkButton}
@@ -901,11 +907,9 @@ export default function TaskDetails() {
           )}
         </View>
 
-        {/* Activity & Comments Section */}
         <View style={styles.commentsSection}>
           <Text style={styles.sectionTitle}>Activity & Comments</Text>
 
-          {/* Add Comment */}
           {canEdit && (
             <View style={styles.addCommentContainer}>
               <TextInput
@@ -988,7 +992,6 @@ export default function TaskDetails() {
         </View>
       </ScrollView>
 
-      {/* Status Change Modal */}
       <Modal visible={showStatusModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -1023,7 +1026,6 @@ export default function TaskDetails() {
         </View>
       </Modal>
 
-      {/* Link Task Modal */}
       <Modal visible={showLinkTaskModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -1562,7 +1564,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: COLORS.textSecondary,
   },
-  // Subtasks styles
   subtasksSection: {
     backgroundColor: COLORS.white,
     padding: 16,
@@ -1723,7 +1724,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textLight,
   },
-  // Parent task styles
   parentTaskBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1750,7 +1750,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: COLORS.text,
   },
-  // Available tasks modal styles
   availableTaskItem: {
     flexDirection: "row",
     alignItems: "center",

@@ -51,15 +51,19 @@ interface Stats {
 }
 
 interface Task {
-    completedDate?: Date;
+    _id: string;
+    completedDate?: string;
     status: string;
+    title: string;
+    updatedAt?: string;
 }
 
 export default function Profile() {
-    const { user, setUser } = useAuth();
+    const { user, logout } = useAuth();
     const router = useRouter();
     const [stats, setStats] = useState<Stats | null>(null);
     const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
+    const [allTasks, setAllTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
@@ -77,20 +81,30 @@ export default function Profile() {
         try {
             const token = await AsyncStorage.getItem("authToken");
 
+            // Fetch stats
             const statsResponse = await axios.get(`http://${IP}:5555/user/${user?._id}/stats`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             setStats(statsResponse.data);
 
-            const tasksResponse = await axios.get(
-                `http://${IP}:5555/tasks/user/${user?._id}?status=Completed`,
+            // Fetch all user tasks
+            const allTasksResponse = await axios.get(
+                `http://${IP}:5555/tasks/user/${user?._id}`,
                 {
                     headers: { Authorization: `Bearer ${token}` },
                 }
             );
-            setCompletedTasks(tasksResponse.data);
+            setAllTasks(allTasksResponse.data);
+
+            // Filter completed tasks
+            const completed = allTasksResponse.data.filter((task: Task) => task.status === "Completed");
+            setCompletedTasks(completed);
+
+            console.log("All tasks loaded:", allTasksResponse.data.length);
+            console.log("Completed tasks:", completed.length);
         } catch (error) {
             console.error("Error loading profile data:", error);
+            Alert.alert("Error", "Failed to load profile data");
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -105,7 +119,7 @@ export default function Profile() {
     const handleUpdateProfile = async () => {
         try {
             const token = await AsyncStorage.getItem("authToken");
-            await axios.put(
+            const response = await axios.put(
                 `http://${IP}:5555/user/${user?._id}`,
                 {
                     firstName: editedFirstName,
@@ -118,6 +132,9 @@ export default function Profile() {
                     headers: { Authorization: `Bearer ${token}` },
                 }
             );
+
+            // Update local user state
+            setUser(response.data.user);
             Alert.alert("Success", "Profile updated successfully!");
             setShowEditModal(false);
             loadProfileData();
@@ -126,6 +143,10 @@ export default function Profile() {
             Alert.alert("Error", "Failed to update profile");
         }
     };
+
+    // Înlocuiește funcția handleLogout cu această versiune corectată:
+
+    // Înlocuiește funcția handleLogout cu această versiune corectată:
 
     const handleLogout = () => {
         Alert.alert(
@@ -141,18 +162,30 @@ export default function Profile() {
                     style: "destructive",
                     onPress: async () => {
                         try {
-                            await AsyncStorage.removeItem("authToken");
-                            setUser(null);
-                            router.replace("/(auth)/select-auth");
+                            console.log("Starting logout process...");
+
+                            // Use the logout function from AuthContext
+                            // This will clear both authToken and user from AsyncStorage
+                            await logout();
+                            console.log("Logout completed");
+
+                            // Navigate to select-auth screen
+                            console.log("Attempting navigation...");
+
+                            // Use replace to prevent going back
+                            router.replace("/selectauth");
+
+                            console.log("Navigation completed");
                         } catch (error) {
                             console.error("Error during logout:", error);
-                            Alert.alert("Error", "Failed to disconnect");
+                            Alert.alert("Error", "Failed to disconnect: " + error.message);
                         }
                     },
                 },
             ]
         );
     };
+
 
     const getInitials = () => {
         if (!user) return "??";
@@ -162,27 +195,30 @@ export default function Profile() {
     const getContributionData = () => {
         const weeks = [];
         const today = new Date();
+        today.setHours(23, 59, 59, 999);
 
         for (let weekIndex = 11; weekIndex >= 0; weekIndex--) {
             const week = [];
             for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
                 const date = new Date(today);
                 date.setDate(date.getDate() - (weekIndex * 7 + (6 - dayIndex)));
+                date.setHours(0, 0, 0, 0);
 
+                // Count tasks completed on this date
                 const tasksOnDate = completedTasks.filter((task) => {
                     if (!task.completedDate) return false;
                     const taskDate = new Date(task.completedDate);
-                    return (
-                        taskDate.getDate() === date.getDate() &&
-                        taskDate.getMonth() === date.getMonth() &&
-                        taskDate.getFullYear() === date.getFullYear()
-                    );
+                    taskDate.setHours(0, 0, 0, 0);
+                    return taskDate.getTime() === date.getTime();
                 }).length;
 
                 week.push({
                     date,
                     count: tasksOnDate,
-                    level: tasksOnDate === 0 ? 0 : tasksOnDate <= 2 ? 1 : tasksOnDate <= 4 ? 2 : tasksOnDate <= 6 ? 3 : 4,
+                    level: tasksOnDate === 0 ? 0 :
+                        tasksOnDate <= 2 ? 1 :
+                            tasksOnDate <= 4 ? 2 :
+                                tasksOnDate <= 6 ? 3 : 4,
                 });
             }
             weeks.push(week);
@@ -228,6 +264,7 @@ export default function Profile() {
         return (
             <View style={[styles.container, styles.centerContent]}>
                 <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={styles.loadingText}>Loading profile...</Text>
             </View>
         );
     }
@@ -463,7 +500,7 @@ export default function Profile() {
                                 <Text style={styles.statValue}>{stats?.tasksOverdue || 0}</Text>
                             </View>
 
-                            {stats?.tasksCompleted > 0 && (
+                            {stats && stats.tasksCompleted > 0 && (
                                 <View style={styles.completionRate}>
                                     <Text style={styles.completionRateText}>
                                         Completion Rate:{" "}
@@ -479,7 +516,6 @@ export default function Profile() {
                     </View>
                 </View>
 
-                {/* Disconnect Button */}
                 <View style={styles.section}>
                     <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
                         <Ionicons name="log-out-outline" size={20} color={COLORS.danger} />
@@ -591,6 +627,11 @@ const styles = StyleSheet.create({
     centerContent: {
         justifyContent: "center",
         alignItems: "center",
+    },
+    loadingText: {
+        marginTop: 12,
+        fontSize: 16,
+        color: COLORS.textLight,
     },
     content: {
         flex: 1,
