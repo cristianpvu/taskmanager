@@ -42,6 +42,23 @@ const PRIORITY_COLORS = {
 
 const STATUSES = ["Open", "In Progress", "Under Review", "Completed", "Blocked", "Cancelled", "Pending"];
 
+interface ChecklistItem {
+  _id: string;
+  text: string;
+  isCompleted: boolean;
+  createdAt: string;
+  completedAt?: string;
+}
+
+interface Subtask {
+  _id: string;
+  title: string;
+  status: string;
+  priority: string;
+  progressPercentage: number;
+  assignedTo: any[];
+}
+
 interface Task {
   _id: string;
   title: string;
@@ -64,6 +81,12 @@ interface Task {
   isOpenForClaims: boolean;
   isClaimed: boolean;
   progressPercentage: number;
+  checklist: ChecklistItem[];
+  subtasks: Subtask[];
+  parentTask?: {
+    _id: string;
+    title: string;
+  };
   createdAt: string;
 }
 
@@ -89,6 +112,10 @@ export default function TaskDetails() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [sendingComment, setSendingComment] = useState(false);
+  const [newChecklistItem, setNewChecklistItem] = useState("");
+  const [addingChecklistItem, setAddingChecklistItem] = useState(false);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [creatingSubtask, setCreatingSubtask] = useState(false);
 
   useEffect(() => {
     loadTaskDetails();
@@ -101,7 +128,12 @@ export default function TaskDetails() {
       const response = await axios.get(`http://${IP}:5555/task/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setTask(response.data);
+      // Initialize checklist if it doesn't exist (for old tasks)
+      const taskData = response.data;
+      if (!taskData.checklist) {
+        taskData.checklist = [];
+      }
+      setTask(taskData);
     } catch (error) {
       console.error("Error loading task:", error);
       Alert.alert("Error", "Failed to load task details");
@@ -161,6 +193,86 @@ export default function TaskDetails() {
       Alert.alert("Error", "Failed to add comment");
     } finally {
       setSendingComment(false);
+    }
+  };
+
+  const handleAddChecklistItem = async () => {
+    if (!newChecklistItem.trim()) {
+      Alert.alert("Error", "Please enter a checklist item");
+      return;
+    }
+
+    try {
+      setAddingChecklistItem(true);
+      const token = await AsyncStorage.getItem("authToken");
+      await axios.post(
+        `http://${IP}:5555/task/${id}/checklist/add`,
+        { text: newChecklistItem },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setNewChecklistItem("");
+      // Reload task to get fully populated data
+      loadTaskDetails();
+    } catch (error) {
+      console.error("Error adding checklist item:", error);
+      Alert.alert("Error", "Failed to add checklist item");
+    } finally {
+      setAddingChecklistItem(false);
+    }
+  };
+
+  const handleToggleChecklistItem = async (itemId: string) => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      await axios.put(
+        `http://${IP}:5555/task/${id}/checklist/${itemId}/toggle`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      // Reload task to get fully populated data
+      loadTaskDetails();
+    } catch (error) {
+      console.error("Error toggling checklist item:", error);
+      Alert.alert("Error", "Failed to update checklist item");
+    }
+  };
+
+  const handleDeleteChecklistItem = async (itemId: string) => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      await axios.delete(
+        `http://${IP}:5555/task/${id}/checklist/${itemId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      // Reload task to get fully populated data
+      loadTaskDetails();
+    } catch (error) {
+      console.error("Error deleting checklist item:", error);
+      Alert.alert("Error", "Failed to delete checklist item");
+    }
+  };
+
+  const handleCreateSubtask = async () => {
+    if (!newSubtaskTitle.trim()) {
+      Alert.alert("Error", "Please enter a subtask title");
+      return;
+    }
+
+    try {
+      setCreatingSubtask(true);
+      const token = await AsyncStorage.getItem("authToken");
+      await axios.post(
+        `http://${IP}:5555/task/${id}/subtask`,
+        { title: newSubtaskTitle },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setNewSubtaskTitle("");
+      loadTaskDetails();
+    } catch (error) {
+      console.error("Error creating subtask:", error);
+      Alert.alert("Error", "Failed to create subtask");
+    } finally {
+      setCreatingSubtask(false);
     }
   };
 
@@ -231,6 +343,21 @@ export default function TaskDetails() {
       </View>
 
       <ScrollView style={styles.content}>
+        {/* Parent Task Reference */}
+        {task.parentTask && (
+          <TouchableOpacity
+            style={styles.parentTaskBanner}
+            onPress={() => router.push({ pathname: "/taskdetails", params: { id: task.parentTask?._id || "" } })}
+          >
+            <Ionicons name="git-branch-outline" size={20} color={COLORS.primary} />
+            <View style={styles.parentTaskInfo}>
+              <Text style={styles.parentTaskLabel}>Part of</Text>
+              <Text style={styles.parentTaskTitle}>{task.parentTask?.title || ""}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={COLORS.primary} />
+          </TouchableOpacity>
+        )}
+
         {/* Task Header */}
         <View style={[styles.taskHeader, { borderLeftColor: task.color }]}>
           <View style={styles.taskHeaderTop}>
@@ -334,6 +461,174 @@ export default function TaskDetails() {
               </View>
             </View>
           </View>
+        </View>
+
+        {/* Checklist Section */}
+        <View style={styles.checklistSection}>
+          <Text style={styles.sectionTitle}>
+            Checklist ({task.checklist?.filter(item => item.isCompleted).length || 0}/{task.checklist?.length || 0})
+          </Text>
+
+          {/* Add Checklist Item */}
+          {canEdit && (
+            <View style={styles.addChecklistContainer}>
+              <TextInput
+                style={styles.checklistInput}
+                placeholder="Add a to-do item..."
+                value={newChecklistItem}
+                onChangeText={setNewChecklistItem}
+                placeholderTextColor={COLORS.textLight}
+                onSubmitEditing={handleAddChecklistItem}
+              />
+              <TouchableOpacity
+                style={styles.addChecklistButton}
+                onPress={handleAddChecklistItem}
+                disabled={addingChecklistItem}
+              >
+                {addingChecklistItem ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Ionicons name="add" size={20} color={COLORS.white} />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Checklist Items */}
+          {!task.checklist || task.checklist.length === 0 ? (
+            <View style={styles.emptyChecklist}>
+              <Ionicons name="checkbox-outline" size={48} color={COLORS.textLight} />
+              <Text style={styles.emptyChecklistText}>No checklist items yet</Text>
+            </View>
+          ) : (
+            <View style={styles.checklistItems}>
+              {(task.checklist || []).map((item) => (
+                <View key={item._id} style={styles.checklistItem}>
+                  <TouchableOpacity
+                    style={styles.checkbox}
+                    onPress={() => handleToggleChecklistItem(item._id)}
+                    disabled={!canEdit}
+                  >
+                    <Ionicons
+                      name={item.isCompleted ? "checkbox" : "square-outline"}
+                      size={24}
+                      color={item.isCompleted ? COLORS.success : COLORS.textLight}
+                    />
+                  </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.checklistItemText,
+                      item.isCompleted && styles.checklistItemTextCompleted,
+                    ]}
+                  >
+                    {item.text}
+                  </Text>
+                  {canEdit && (
+                    <TouchableOpacity
+                      style={styles.deleteChecklistButton}
+                      onPress={() => handleDeleteChecklistItem(item._id)}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Subtasks Section */}
+        <View style={styles.subtasksSection}>
+          <Text style={styles.sectionTitle}>
+            Subtasks ({task.subtasks?.length || 0})
+          </Text>
+
+          {/* Add Subtask */}
+          {canEdit && (
+            <View style={styles.addSubtaskContainer}>
+              <TextInput
+                style={styles.subtaskInput}
+                placeholder="Add a subtask..."
+                value={newSubtaskTitle}
+                onChangeText={setNewSubtaskTitle}
+                placeholderTextColor={COLORS.textLight}
+                onSubmitEditing={handleCreateSubtask}
+                returnKeyType="done"
+              />
+              <TouchableOpacity
+                style={styles.addSubtaskButton}
+                onPress={handleCreateSubtask}
+                disabled={creatingSubtask}
+              >
+                {creatingSubtask ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Ionicons name="add" size={20} color={COLORS.white} />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Subtasks List */}
+          {!task.subtasks || task.subtasks.length === 0 ? (
+            <View style={styles.emptySubtasks}>
+              <Ionicons name="git-branch-outline" size={48} color={COLORS.textLight} />
+              <Text style={styles.emptySubtasksText}>No subtasks yet</Text>
+            </View>
+          ) : (
+            <View style={styles.subtasksList}>
+              {task.subtasks.map((subtask) => (
+                <TouchableOpacity
+                  key={subtask._id}
+                  style={styles.subtaskCard}
+                  onPress={() => router.push({ pathname: "/taskdetails", params: { id: subtask._id } })}
+                >
+                  <View style={styles.subtaskHeader}>
+                    <Ionicons name="git-branch-outline" size={16} color={COLORS.textLight} />
+                    <Text style={styles.subtaskTitle}>{subtask.title}</Text>
+                  </View>
+                  
+                  <View style={styles.subtaskMeta}>
+                    <View style={styles.subtaskStatus}>
+                      <Text style={styles.subtaskStatusText}>{subtask.status}</Text>
+                    </View>
+                    <View style={styles.subtaskPriority}>
+                      <View
+                        style={[
+                          styles.priorityDot,
+                          { backgroundColor: PRIORITY_COLORS[subtask.priority as keyof typeof PRIORITY_COLORS] },
+                        ]}
+                      />
+                      <Text style={styles.subtaskPriorityText}>{subtask.priority}</Text>
+                    </View>
+                  </View>
+
+                  {/* Progress Bar */}
+                  <View style={styles.subtaskProgressContainer}>
+                    <View style={styles.subtaskProgressBar}>
+                      <View
+                        style={[
+                          styles.subtaskProgressFill,
+                          { width: `${subtask.progressPercentage}%` },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.subtaskProgressText}>{subtask.progressPercentage}%</Text>
+                  </View>
+
+                  {/* Assigned Users */}
+                  {subtask.assignedTo && subtask.assignedTo.length > 0 && (
+                    <View style={styles.subtaskAssigned}>
+                      <Ionicons name="people-outline" size={14} color={COLORS.textLight} />
+                      <Text style={styles.subtaskAssignedText}>
+                        {subtask.assignedTo.length} assigned
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Comments Section */}
@@ -650,6 +945,70 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     minWidth: 40,
   },
+  checklistSection: {
+    backgroundColor: COLORS.white,
+    padding: 16,
+    marginBottom: 12,
+  },
+  addChecklistContainer: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 20,
+  },
+  checklistInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  addChecklistButton: {
+    width: 48,
+    height: 48,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyChecklist: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  emptyChecklistText: {
+    fontSize: 16,
+    color: COLORS.textLight,
+    marginTop: 12,
+  },
+  checklistItems: {
+    gap: 12,
+  },
+  checklistItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 12,
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  checkbox: {
+    padding: 4,
+  },
+  checklistItemText: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  checklistItemTextCompleted: {
+    textDecorationLine: "line-through",
+    color: COLORS.textLight,
+  },
+  deleteChecklistButton: {
+    padding: 4,
+  },
   commentsSection: {
     backgroundColor: COLORS.white,
     padding: 16,
@@ -784,5 +1143,162 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: COLORS.textSecondary,
+  },
+  // Subtasks styles
+  subtasksSection: {
+    backgroundColor: COLORS.white,
+    padding: 16,
+    marginBottom: 16,
+    borderRadius: 12,
+  },
+  addSubtaskContainer: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 16,
+  },
+  subtaskInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  addSubtaskButton: {
+    width: 40,
+    height: 40,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptySubtasks: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  emptySubtasksText: {
+    fontSize: 16,
+    color: COLORS.textLight,
+    marginTop: 12,
+  },
+  subtasksList: {
+    gap: 12,
+  },
+  subtaskCard: {
+    backgroundColor: COLORS.background,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  subtaskHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  subtaskTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: COLORS.text,
+    flex: 1,
+  },
+  subtaskMeta: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 12,
+  },
+  subtaskStatus: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: COLORS.primary + "20",
+    borderRadius: 6,
+  },
+  subtaskStatusText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.primary,
+  },
+  subtaskPriority: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: COLORS.white,
+    borderRadius: 6,
+  },
+  priorityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  subtaskPriorityText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.text,
+  },
+  subtaskProgressContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  subtaskProgressBar: {
+    flex: 1,
+    height: 6,
+    backgroundColor: COLORS.border,
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  subtaskProgressFill: {
+    height: "100%",
+    backgroundColor: COLORS.success,
+    borderRadius: 3,
+  },
+  subtaskProgressText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.textSecondary,
+    minWidth: 35,
+    textAlign: "right",
+  },
+  subtaskAssigned: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  subtaskAssignedText: {
+    fontSize: 12,
+    color: COLORS.textLight,
+  },
+  // Parent task styles
+  parentTaskBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.primary + "10",
+    padding: 12,
+    marginBottom: 16,
+    borderRadius: 12,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "30",
+  },
+  parentTaskInfo: {
+    flex: 1,
+  },
+  parentTaskLabel: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    textTransform: "uppercase",
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  parentTaskTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.text,
   },
 });

@@ -64,6 +64,7 @@ interface Task {
   tags: string[];
   isOpenForClaims: boolean;
   isClaimed: boolean;
+  checklist?: any[];
 }
 
 export default function MyTasks() {
@@ -84,7 +85,12 @@ export default function MyTasks() {
       const response = await axios.get(`http://${IP}:5555/tasks/user/${user?._id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setTasks(response.data);
+      // Initialize checklist for old tasks that don't have it
+      const tasksData = response.data.map((task: Task) => ({
+        ...task,
+        checklist: task.checklist || [],
+      }));
+      setTasks(tasksData);
     } catch (error) {
       console.error("Error loading my tasks:", error);
     } finally {
