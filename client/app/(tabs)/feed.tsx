@@ -41,6 +41,9 @@ const PRIORITY_COLORS = {
   Urgent: "#EF4444",
 };
 
+// Roles that can create tasks
+const AUTHORIZED_ROLES = ["CEO", "Project Manager", "Team Lead"];
+
 interface User {
   _id: string;
   firstName: string;
@@ -113,6 +116,9 @@ export default function Feed() {
   const [groupSearchResults, setGroupSearchResults] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Check if user can create tasks
+  const canCreateTasks = AUTHORIZED_ROLES.includes(user?.role || "");
+
   useEffect(() => {
     loadTasks();
   }, []);
@@ -143,6 +149,10 @@ export default function Feed() {
   };
 
   const handleAddTask = () => {
+    if (!canCreateTasks) {
+      Alert.alert("Permission Denied", "Only CEO, Project Manager, and Team Lead can create tasks.");
+      return;
+    }
     setShowCreateModal(true);
   };
 
@@ -348,7 +358,11 @@ export default function Feed() {
           <View style={styles.emptyState}>
             <Ionicons name="newspaper-outline" size={64} color={COLORS.textLight} />
             <Text style={styles.emptyText}>No tasks available</Text>
-            <Text style={styles.emptySubtext}>Create a new task to get started</Text>
+            <Text style={styles.emptySubtext}>
+              {canCreateTasks 
+                ? "Create a new task to get started" 
+                : "Tasks will appear here when available"}
+            </Text>
           </View>
         ) : (
           <View style={styles.tasksContainer}>
@@ -438,9 +452,12 @@ export default function Feed() {
         )}
       </ScrollView>
 
-      <TouchableOpacity style={styles.fab} onPress={handleAddTask}>
-        <Ionicons name="add" size={28} color={COLORS.white} />
-      </TouchableOpacity>
+      {/* Only show FAB for authorized roles */}
+      {canCreateTasks && (
+        <TouchableOpacity style={styles.fab} onPress={handleAddTask}>
+          <Ionicons name="add" size={28} color={COLORS.white} />
+        </TouchableOpacity>
+      )}
 
       <Modal visible={showCreateModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
