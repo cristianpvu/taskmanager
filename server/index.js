@@ -953,22 +953,18 @@ app.put("/task/:id/assign-to-me", verifyToken, async (req, res) => {
 
     const hasGroupAssignment = task.assignedGroups && task.assignedGroups.length > 0;
     
-    if (!hasGroupAssignment) {
-      return res.status(400).json({ 
-        message: "This task must have a group assignment to be self-assigned" 
-      });
-    }
-
-    const user = await User.findById(req.userId).populate("groups");
-    const userGroupIds = user.groups.map(g => g._id.toString());
-    const taskGroupIds = task.assignedGroups.map(g => g._id.toString());
-    
-    const isInAssignedGroup = userGroupIds.some(ugId => taskGroupIds.includes(ugId));
-    
-    if (!isInAssignedGroup) {
-      return res.status(403).json({ 
-        message: "You must be a member of one of the assigned groups to take this task" 
-      });
+    if (hasGroupAssignment) {
+      const user = await User.findById(req.userId).populate("groups");
+      const userGroupIds = user.groups.map(g => g._id.toString());
+      const taskGroupIds = task.assignedGroups.map(g => g._id.toString());
+      
+      const isInAssignedGroup = userGroupIds.some(ugId => taskGroupIds.includes(ugId));
+      
+      if (!isInAssignedGroup) {
+        return res.status(403).json({ 
+          message: "You must be a member of one of the assigned groups to take this task" 
+        });
+      }
     }
 
     task.assignedTo.push(req.userId);
@@ -1024,39 +1020,36 @@ app.put("/task/:id/assign-user", verifyToken, async (req, res) => {
       return res.status(400).json({ message: "User is already assigned to this task" });
     }
 
-    const hasGroupAssignment = task.assignedGroups && task.assignedGroups.length > 0;
-    
-    if (!hasGroupAssignment) {
-      return res.status(400).json({ 
-        message: "This task must have a group assignment to assign to group members" 
-      });
-    }
-
-    const currentUser = await User.findById(req.userId).populate("groups");
-    const currentUserGroupIds = currentUser.groups.map(g => g._id.toString());
-    const taskGroupIds = task.assignedGroups.map(g => g._id.toString());
-    
-    const currentUserInGroup = currentUserGroupIds.some(ugId => taskGroupIds.includes(ugId));
-    
-    if (!currentUserInGroup) {
-      return res.status(403).json({ 
-        message: "You must be a member of one of the assigned groups to assign this task" 
-      });
-    }
-
     const targetUser = await User.findById(userId).populate("groups");
     
     if (!targetUser) {
       return res.status(404).json({ message: "Target user not found" });
     }
 
-    const targetUserGroupIds = targetUser.groups.map(g => g._id.toString());
-    const targetUserInGroup = targetUserGroupIds.some(ugId => taskGroupIds.includes(ugId));
+    // If task has group assignment, validate group membership
+    const hasGroupAssignment = task.assignedGroups && task.assignedGroups.length > 0;
     
-    if (!targetUserInGroup) {
-      return res.status(403).json({ 
-        message: "Target user must be a member of one of the assigned groups" 
-      });
+    if (hasGroupAssignment) {
+      const currentUser = await User.findById(req.userId).populate("groups");
+      const currentUserGroupIds = currentUser.groups.map(g => g._id.toString());
+      const taskGroupIds = task.assignedGroups.map(g => g._id.toString());
+      
+      const currentUserInGroup = currentUserGroupIds.some(ugId => taskGroupIds.includes(ugId));
+      
+      if (!currentUserInGroup) {
+        return res.status(403).json({ 
+          message: "You must be a member of one of the assigned groups to assign this task" 
+        });
+      }
+
+      const targetUserGroupIds = targetUser.groups.map(g => g._id.toString());
+      const targetUserInGroup = targetUserGroupIds.some(ugId => taskGroupIds.includes(ugId));
+      
+      if (!targetUserInGroup) {
+        return res.status(403).json({ 
+          message: "Target user must be a member of one of the assigned groups" 
+        });
+      }
     }
 
     task.assignedTo.push(userId);

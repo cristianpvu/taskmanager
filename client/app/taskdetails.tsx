@@ -439,6 +439,41 @@ export default function TaskDetails() {
     }
   };
 
+  const handleAssignToMe = async () => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      await axios.put(
+        `http://${IP}:5555/task/${id}/assign-to-me`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      loadTaskDetails();
+      loadActivityLog();
+      Alert.alert("Success", "Task assigned to you successfully");
+    } catch (error: any) {
+      console.error("Error claiming task:", error);
+      Alert.alert("Error", error.response?.data?.message || "Failed to claim task");
+    }
+  };
+
+  const handleAssignUser = async (userId: string) => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      await axios.put(
+        `http://${IP}:5555/task/${id}/assign-user`,
+        { userId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setShowReassignModal(false);
+      loadTaskDetails();
+      loadActivityLog();
+      Alert.alert("Success", "Task assigned successfully");
+    } catch (error: any) {
+      console.error("Error assigning task:", error);
+      Alert.alert("Error", error.response?.data?.message || "Failed to assign task");
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("ro-RO", {
@@ -649,7 +684,7 @@ export default function TaskDetails() {
             </View>
           </View>
 
-          {task.assignedTo.length > 0 && (
+          {task.assignedTo.length > 0 ? (
             <View style={styles.infoRow}>
               <Ionicons name="people-outline" size={20} color={COLORS.textLight} />
               <View style={styles.infoContent}>
@@ -668,6 +703,33 @@ export default function TaskDetails() {
                       </Text>
                     </View>
                   ))}
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.infoRow}>
+              <Ionicons name="person-outline" size={20} color={COLORS.textLight} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Not Assigned</Text>
+                <Text style={styles.infoSubtext}>This task is available for the team/group</Text>
+                <View style={styles.assignmentActions}>
+                  <TouchableOpacity
+                    style={styles.claimButton}
+                    onPress={handleAssignToMe}
+                  >
+                    <Ionicons name="hand-right-outline" size={18} color="#fff" />
+                    <Text style={styles.claimButtonText}>Claim Task</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.assignButton}
+                    onPress={() => {
+                      loadAvailableUsers();
+                      setShowReassignModal(true);
+                    }}
+                  >
+                    <Ionicons name="person-add-outline" size={18} color={COLORS.primary} />
+                    <Text style={styles.assignButtonText}>Assign Someone</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
@@ -1101,24 +1163,30 @@ export default function TaskDetails() {
         </View>
       </Modal>
 
-      {/* Reassign Modal */}
+      {/* Reassign/Assign Modal */}
       <Modal visible={showReassignModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Reassign Task</Text>
-            <Text style={styles.modalSubtitle}>
-              Reassigns remaining: {3 - (task?.reassignCount || 0)}/3
+            <Text style={styles.modalTitle}>
+              {task?.assignedTo && task.assignedTo.length > 0 ? "Reassign Task" : "Assign Task"}
             </Text>
+            {task?.assignedTo && task.assignedTo.length > 0 && (
+              <Text style={styles.modalSubtitle}>
+                Reassigns remaining: {3 - (task?.reassignCount || 0)}/3
+              </Text>
+            )}
 
-            {/* Optional Reason Input */}
-            <TextInput
-              style={styles.reasonInput}
-              placeholder="Reason for reassignment (optional)"
-              value={reassignReason}
-              onChangeText={setReassignReason}
-              placeholderTextColor={COLORS.textLight}
-              multiline
-            />
+            {/* Optional Reason Input - only for reassignment */}
+            {task?.assignedTo && task.assignedTo.length > 0 && (
+              <TextInput
+                style={styles.reasonInput}
+                placeholder="Reason for reassignment (optional)"
+                value={reassignReason}
+                onChangeText={setReassignReason}
+                placeholderTextColor={COLORS.textLight}
+                multiline
+              />
+            )}
             
             {loadingUsers ? (
               <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 40 }} />
@@ -1135,7 +1203,13 @@ export default function TaskDetails() {
                   <TouchableOpacity
                     key={availableUser._id}
                     style={styles.userItem}
-                    onPress={() => handleReassign(availableUser._id)}
+                    onPress={() => {
+                      if (task?.assignedTo && task.assignedTo.length > 0) {
+                        handleReassign(availableUser._id);
+                      } else {
+                        handleAssignUser(availableUser._id);
+                      }
+                    }}
                     disabled={reassigning}
                   >
                     <View style={styles.userAvatar}>
@@ -1988,5 +2062,49 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textLight,
     marginTop: 4,
+  },
+  infoSubtext: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginBottom: 12,
+  },
+  assignmentActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  claimButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  claimButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  assignButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  assignButtonText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
