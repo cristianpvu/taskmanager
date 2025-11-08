@@ -240,7 +240,7 @@ export default function AdminDashboard() {
 
         const getRoleIcon = (role) => {
             switch (role) {
-                case 'CEO': return 'crown';
+                case 'CEO': return 'business';
                 case 'Project Manager': return 'briefcase';
                 case 'Team Lead': return 'people';
                 case 'Employee': return 'person';
