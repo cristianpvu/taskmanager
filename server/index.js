@@ -19,6 +19,14 @@ import { Notification } from "./models/notificationModel.js";
 
 dotenv.config();
 const app = express();
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
 app.use(express.json());
 app.use(cors());
 const PORT = process.env.PORT || 5555;
@@ -61,7 +69,7 @@ io.use((socket, next) => {
 
 io.on("connection", (socket) => {
   if (!socket.userId) {
-    console.log("⚠️ WARNING: Socket connected but userId is undefined!");
+    console.log("WARNING: Socket connected but userId is undefined!");
     socket.disconnect();
     return;
   }
