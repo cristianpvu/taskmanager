@@ -1,7 +1,6 @@
 import axios from 'axios';
-import { IP } from '../data/ip';
 
-const API_URL = `http://${IP}:5555`;
+const API_URL = `http://${process.env.EXPO_PUBLIC_API_URL}:5555`;
 
 export const authAPI = {
   register: async (email: string, password: string, firstName: string, lastName: string, role: string, department: string) => {
