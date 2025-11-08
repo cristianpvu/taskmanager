@@ -6,6 +6,7 @@ import axios from "axios";
 import { IP } from "@/data/ip";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import GroupDetail from "../components/GroupDetail";
+import { useRouter, useLocalSearchParams } from "expo-router";
 
 const COLORS = {
   primary: "#2563EB",
@@ -38,6 +39,8 @@ interface User {
 
 export default function Teams() {
   const { user } = useAuth();
+  const router = useRouter();
+  const params = useLocalSearchParams();
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -52,6 +55,13 @@ export default function Teams() {
   useEffect(() => {
     loadGroups();
   }, []);
+
+  useEffect(() => {
+    if (params.returnToGroup && typeof params.returnToGroup === 'string') {
+      setSelectedGroup(params.returnToGroup);
+      router.setParams({ returnToGroup: undefined });
+    }
+  }, [params.returnToGroup]);
 
   const loadGroups = async () => {
     try {
@@ -246,7 +256,6 @@ export default function Teams() {
               numberOfLines={3}
             />
 
-            {/* Add Members Section */}
             <Text style={styles.sectionLabel}>Add Members</Text>
             <TextInput
               style={styles.input}
@@ -259,7 +268,6 @@ export default function Teams() {
               placeholderTextColor={COLORS.textLight}
             />
 
-            {/* Search Results */}
             {searchResults.length > 0 && (
               <View style={styles.searchResults}>
                 <ScrollView style={styles.searchResultsList} nestedScrollEnabled>
@@ -288,7 +296,6 @@ export default function Teams() {
               </View>
             )}
 
-            {/* Selected Members */}
             {selectedMembers.length > 0 && (
               <View style={styles.selectedMembers}>
                 <Text style={styles.selectedLabel}>
