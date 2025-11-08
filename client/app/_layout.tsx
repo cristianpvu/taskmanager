@@ -2,6 +2,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import React, { useEffect } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { SocketProvider } from "@/context/SocketContext";
 
 function RootLayoutNav() {
   const { user, isLoading } = useAuth();
@@ -45,10 +46,18 @@ function RootLayoutNav() {
   );
 }
 
+function AppWithProviders() {
+  return (
+    <SocketProvider>
+      <RootLayoutNav />
+    </SocketProvider>
+  );
+}
+
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <AppWithProviders />
     </AuthProvider>
   );
 }
