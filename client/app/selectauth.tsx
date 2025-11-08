@@ -22,13 +22,12 @@ export default function SelectAuth() {
                 </View>
 
                 <Text style={styles.appTitle}>SecureTask</Text>
-                <Text style={styles.appSubtitle}>Security Information Service</Text>
             </LinearGradient>
 
             <View style={styles.contentContainer}>
-                <Text style={styles.welcomeTitle}>Bine ai venit!</Text>
+                <Text style={styles.welcomeTitle}>Welcome!</Text>
                 <Text style={styles.welcomeSubtitle}>
-                    Gestionează task-urile de securitate cu ușurință
+                    Manage security tasks with ease
                 </Text>
 
                 <View style={styles.buttonContainer}>
@@ -54,8 +53,8 @@ export default function SelectAuth() {
                 </View>
 
                 <Text style={styles.termsText}>
-                    Conectându-te, ești de acord cu{' '}
-                    <Text style={styles.termsLink}>Termenii și Condițiile</Text>
+                    By connecting, you agree to our{' '}
+                    <Text style={styles.termsLink}>Terms and Conditions</Text>
                 </Text>
             </View>
         </SafeAreaView>
@@ -116,11 +115,6 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         textAlign: 'center',
         marginBottom: 8,
-    },
-    appSubtitle: {
-        fontSize: 14,
-        color: 'rgba(255, 255, 255, 0.9)',
-        textAlign: 'center',
     },
     contentContainer: {
         flex: 1,

@@ -257,6 +257,7 @@ export default function TaskDetails() {
       );
       setNewChecklistItem("");
       loadTaskDetails();
+      loadActivityLog();
     } catch (error) {
       console.error("Error adding checklist item:", error);
       Alert.alert("Error", "Failed to add checklist item");
@@ -274,6 +275,7 @@ export default function TaskDetails() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       loadTaskDetails();
+      loadActivityLog();
     } catch (error) {
       console.error("Error toggling checklist item:", error);
       Alert.alert("Error", "Failed to update checklist item");
@@ -288,6 +290,7 @@ export default function TaskDetails() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       loadTaskDetails();
+      loadActivityLog();
     } catch (error) {
       console.error("Error deleting checklist item:", error);
       Alert.alert("Error", "Failed to delete checklist item");
@@ -310,6 +313,7 @@ export default function TaskDetails() {
       );
       setNewSubtaskTitle("");
       loadTaskDetails();
+      loadActivityLog();
     } catch (error) {
       console.error("Error creating subtask:", error);
       Alert.alert("Error", "Failed to create subtask");
@@ -346,6 +350,7 @@ export default function TaskDetails() {
       );
       setShowLinkTaskModal(false);
       loadTaskDetails();
+      loadActivityLog();
       Alert.alert("Success", "Task linked successfully");
     } catch (error: any) {
       console.error("Error linking task:", error);
@@ -372,6 +377,7 @@ export default function TaskDetails() {
                 { headers: { Authorization: `Bearer ${token}` } }
               );
               loadTaskDetails();
+              loadActivityLog();
               Alert.alert("Success", "Subtask unlinked successfully");
             } catch (error) {
               console.error("Error unlinking subtask:", error);
@@ -423,12 +429,48 @@ export default function TaskDetails() {
       setShowReassignModal(false);
       setReassignReason("");
       loadTaskDetails();
+      loadActivityLog();
       Alert.alert("Success", "Task reassigned successfully");
     } catch (error: any) {
       console.error("Error reassigning task:", error);
       Alert.alert("Error", error.response?.data?.message || "Failed to reassign task");
     } finally {
       setReassigning(false);
+    }
+  };
+
+  const handleAssignToMe = async () => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      await axios.put(
+        `http://${IP}:5555/task/${id}/assign-to-me`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      loadTaskDetails();
+      loadActivityLog();
+      Alert.alert("Success", "Task assigned to you successfully");
+    } catch (error: any) {
+      console.error("Error claiming task:", error);
+      Alert.alert("Error", error.response?.data?.message || "Failed to claim task");
+    }
+  };
+
+  const handleAssignUser = async (userId: string) => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      await axios.put(
+        `http://${IP}:5555/task/${id}/assign-user`,
+        { userId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setShowReassignModal(false);
+      loadTaskDetails();
+      loadActivityLog();
+      Alert.alert("Success", "Task assigned successfully");
+    } catch (error: any) {
+      console.error("Error assigning task:", error);
+      Alert.alert("Error", error.response?.data?.message || "Failed to assign task");
     }
   };
 
@@ -642,7 +684,7 @@ export default function TaskDetails() {
             </View>
           </View>
 
-          {task.assignedTo.length > 0 && (
+          {task.assignedTo.length > 0 ? (
             <View style={styles.infoRow}>
               <Ionicons name="people-outline" size={20} color={COLORS.textLight} />
               <View style={styles.infoContent}>
@@ -661,6 +703,33 @@ export default function TaskDetails() {
                       </Text>
                     </View>
                   ))}
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.infoRow}>
+              <Ionicons name="person-outline" size={20} color={COLORS.textLight} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Not Assigned</Text>
+                <Text style={styles.infoSubtext}>This task is available for the team/group</Text>
+                <View style={styles.assignmentActions}>
+                  <TouchableOpacity
+                    style={styles.claimButton}
+                    onPress={handleAssignToMe}
+                  >
+                    <Ionicons name="hand-right-outline" size={18} color="#fff" />
+                    <Text style={styles.claimButtonText}>Claim Task</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.assignButton}
+                    onPress={() => {
+                      loadAvailableUsers();
+                      setShowReassignModal(true);
+                    }}
+                  >
+                    <Ionicons name="person-add-outline" size={18} color={COLORS.primary} />
+                    <Text style={styles.assignButtonText}>Assign Someone</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
@@ -934,7 +1003,6 @@ export default function TaskDetails() {
             </View>
           )}
 
-          {/* Combined Activity Log & Comments */}
           {comments.length === 0 && activityLog.length === 0 ? (
             <View style={styles.emptyComments}>
               <Ionicons name="time-outline" size={48} color={COLORS.textLight} />
@@ -942,51 +1010,69 @@ export default function TaskDetails() {
             </View>
           ) : (
             <>
-              {/* Activity Log Items */}
-              {activityLog.map((activity) => (
-                <View key={activity._id} style={styles.activityItem}>
-                  <View style={styles.activityIcon}>
-                    <Ionicons 
-                      name={getActivityIcon(activity.type) as any} 
-                      size={16} 
-                      color={COLORS.primary} 
-                    />
-                  </View>
-                  <View style={styles.activityContent}>
-                    <Text style={styles.activityText}>
-                      <Text style={styles.activityUser}>
-                        {activity.user.firstName} {activity.user.lastName}
-                      </Text>
-                      {" "}
-                      {activity.description}
-                    </Text>
-                    <Text style={styles.activityTime}>
-                      {formatRelativeTime(activity.timestamp)}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-
-              {/* Comments */}
-              {comments.map((comment) => (
-                <View key={comment._id} style={styles.comment}>
-                  <View style={styles.commentAvatar}>
-                    <Text style={styles.commentAvatarText}>
-                      {comment.author.firstName[0]}
-                      {comment.author.lastName[0]}
-                    </Text>
-                  </View>
-                  <View style={styles.commentContent}>
-                    <View style={styles.commentHeader}>
-                      <Text style={styles.commentAuthor}>
-                        {comment.author.firstName} {comment.author.lastName}
-                      </Text>
-                      <Text style={styles.commentTime}>{formatRelativeTime(comment.createdAt)}</Text>
-                    </View>
-                    <Text style={styles.commentText}>{comment.content}</Text>
-                  </View>
-                </View>
-              ))}
+              {[
+                ...activityLog.map((activity) => ({
+                  ...activity,
+                  itemType: 'activity',
+                  activityType: activity.type,
+                  timestamp: activity.timestamp,
+                })),
+                ...comments.map((comment) => ({
+                  ...comment,
+                  itemType: 'comment',
+                  timestamp: comment.createdAt,
+                })),
+              ]
+                .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                .map((item) => {
+                  if (item.itemType === 'activity') {
+                    return (
+                      <View key={`activity-${item._id}`} style={styles.activityItem}>
+                        <View style={styles.activityIcon}>
+                          <Ionicons 
+                            name={getActivityIcon(item.activityType) as any} 
+                            size={16} 
+                            color={COLORS.primary} 
+                          />
+                        </View>
+                        <View style={styles.activityContent}>
+                          <Text style={styles.activityText}>
+                            <Text style={styles.activityUser}>
+                              {item.user.firstName} {item.user.lastName}
+                            </Text>
+                            {" "}
+                            {item.description}
+                          </Text>
+                          <Text style={styles.activityTime}>
+                            {formatRelativeTime(item.timestamp)}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  } else {
+                    return (
+                      <View key={`comment-${item._id}`} style={styles.comment}>
+                        <View style={styles.commentAvatar}>
+                          <Text style={styles.commentAvatarText}>
+                            {item.author.firstName[0]}
+                            {item.author.lastName[0]}
+                          </Text>
+                        </View>
+                        <View style={styles.commentContent}>
+                          <View style={styles.commentHeader}>
+                            <Text style={styles.commentAuthor}>
+                              {item.author.firstName} {item.author.lastName}
+                            </Text>
+                            <Text style={styles.commentTime}>
+                              {formatRelativeTime(item.timestamp)}
+                            </Text>
+                          </View>
+                          <Text style={styles.commentText}>{item.content}</Text>
+                        </View>
+                      </View>
+                    );
+                  }
+                })}
             </>
           )}
         </View>
@@ -1077,24 +1163,30 @@ export default function TaskDetails() {
         </View>
       </Modal>
 
-      {/* Reassign Modal */}
+      {/* Reassign/Assign Modal */}
       <Modal visible={showReassignModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Reassign Task</Text>
-            <Text style={styles.modalSubtitle}>
-              Reassigns remaining: {3 - (task?.reassignCount || 0)}/3
+            <Text style={styles.modalTitle}>
+              {task?.assignedTo && task.assignedTo.length > 0 ? "Reassign Task" : "Assign Task"}
             </Text>
+            {task?.assignedTo && task.assignedTo.length > 0 && (
+              <Text style={styles.modalSubtitle}>
+                Reassigns remaining: {3 - (task?.reassignCount || 0)}/3
+              </Text>
+            )}
 
-            {/* Optional Reason Input */}
-            <TextInput
-              style={styles.reasonInput}
-              placeholder="Reason for reassignment (optional)"
-              value={reassignReason}
-              onChangeText={setReassignReason}
-              placeholderTextColor={COLORS.textLight}
-              multiline
-            />
+            {/* Optional Reason Input - only for reassignment */}
+            {task?.assignedTo && task.assignedTo.length > 0 && (
+              <TextInput
+                style={styles.reasonInput}
+                placeholder="Reason for reassignment (optional)"
+                value={reassignReason}
+                onChangeText={setReassignReason}
+                placeholderTextColor={COLORS.textLight}
+                multiline
+              />
+            )}
             
             {loadingUsers ? (
               <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 40 }} />
@@ -1111,7 +1203,13 @@ export default function TaskDetails() {
                   <TouchableOpacity
                     key={availableUser._id}
                     style={styles.userItem}
-                    onPress={() => handleReassign(availableUser._id)}
+                    onPress={() => {
+                      if (task?.assignedTo && task.assignedTo.length > 0) {
+                        handleReassign(availableUser._id);
+                      } else {
+                        handleAssignUser(availableUser._id);
+                      }
+                    }}
                     disabled={reassigning}
                   >
                     <View style={styles.userAvatar}>
@@ -1964,5 +2062,49 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textLight,
     marginTop: 4,
+  },
+  infoSubtext: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginBottom: 12,
+  },
+  assignmentActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  claimButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  claimButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  assignButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  assignButtonText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
