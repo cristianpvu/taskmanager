@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
@@ -48,6 +49,7 @@ export default function GroupDetail({ groupId, onClose }: GroupDetailProps) {
   const [messageInput, setMessageInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showMembersModal, setShowMembersModal] = useState(false);
 
   useEffect(() => {
     loadGroupData();
@@ -60,6 +62,7 @@ export default function GroupDetail({ groupId, onClose }: GroupDetailProps) {
       const groupRes = await axios.get(`http://${IP}:5555/group/${groupId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      
       setGroup(groupRes.data);
 
       const memberIds = groupRes.data.members.map((m: any) => m._id);
@@ -83,7 +86,6 @@ export default function GroupDetail({ groupId, onClose }: GroupDetailProps) {
       
       if (existingConversation) {
         convId = existingConversation._id;
-        console.log("Using existing conversation:", convId);
       } else {
         const convRes = await axios.post(
           `http://${IP}:5555/conversation/create`,
@@ -95,7 +97,6 @@ export default function GroupDetail({ groupId, onClose }: GroupDetailProps) {
           { headers: { Authorization: `Bearer ${token}` } }
         );
         convId = convRes.data.conversation?._id || convRes.data._id;
-        console.log("Created new conversation:", convId);
       }
       
       setConversationId(convId);
@@ -106,22 +107,19 @@ export default function GroupDetail({ groupId, onClose }: GroupDetailProps) {
           { headers: { Authorization: `Bearer ${token}` } }
         );
         
-        console.log("Messages response:", msgRes.data);
-        
         const loadedMessages = msgRes.data.messages || msgRes.data || [];
-        console.log("Loaded messages count:", loadedMessages.length);
         setMessages(loadedMessages);
         setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 100);
       }
 
-      const taskRes = await axios.get(`http://${IP}:5555/tasks/user/${user?._id}`, {
+      const taskRes = await axios.get(`http://${IP}:5555/tasks/group/${groupId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      
       setTasks(taskRes.data);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error loading group data:", error);
-      console.error("Error details:", error.response?.data || error.message);
       Alert.alert("Error", "Failed to load group data");
     } finally {
       setLoading(false);
@@ -136,7 +134,6 @@ export default function GroupDetail({ groupId, onClose }: GroupDetailProps) {
 
   const handleSendMessage = async () => {
     if (!messageInput.trim() || !conversationId) {
-      console.log("Cannot send - missing input or conversationId");
       return;
     }
 
@@ -149,8 +146,6 @@ export default function GroupDetail({ groupId, onClose }: GroupDetailProps) {
       formData.append("conversationId", conversationId);
       formData.append("content", messageText);
 
-      console.log("Sending message to conversation:", conversationId);
-      
       const response = await axios.post(`http://${IP}:5555/message/send`, formData, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -158,15 +153,12 @@ export default function GroupDetail({ groupId, onClose }: GroupDetailProps) {
         },
       });
 
-      console.log("Message sent successfully:", response.data);
-
       setMessages([...messages, response.data.messageData]);
       setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (error) {
       console.error("Error sending message:", error);
-      console.error("Error details:", error.response?.data || error.message);
       Alert.alert("Error", "Failed to send message");
-      setMessageInput(messageText); 
+      setMessageInput(messageText);
     }
   };
 
@@ -224,13 +216,19 @@ export default function GroupDetail({ groupId, onClose }: GroupDetailProps) {
         <TouchableOpacity onPress={onClose} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
-        <View style={styles.headerInfo}>
+        <TouchableOpacity 
+          style={styles.headerInfo}
+          onPress={() => setShowMembersModal(true)}
+        >
           <Text style={styles.headerTitle}>{group?.name}</Text>
           <Text style={styles.headerSubtitle}>
-            {group?.members.length} members
+            {group?.members?.length || 0} members · Tap to view
           </Text>
-        </View>
-        <TouchableOpacity style={styles.headerButton}>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.headerButton}
+          onPress={() => setShowMembersModal(true)}
+        >
           <Ionicons name="information-circle-outline" size={24} color={COLORS.text} />
         </TouchableOpacity>
       </View>
@@ -339,52 +337,54 @@ export default function GroupDetail({ groupId, onClose }: GroupDetailProps) {
                 <Text style={styles.emptySubtext}>Tasks will appear here</Text>
               </View>
             ) : (
-              tasks.map((task) => (
-                <View key={task._id} style={styles.taskCard}>
-                  <View style={styles.taskHeader}>
-                    <Text style={styles.taskTitle}>{task.title}</Text>
-                    <View
-                      style={[
-                        styles.priorityBadge,
-                        { backgroundColor: getPriorityColor(task.priority) + "20" },
-                      ]}
-                    >
-                      <Text
+              <>
+                {tasks.map((task) => (
+                  <View key={task._id} style={styles.taskCard}>
+                    <View style={styles.taskHeader}>
+                      <Text style={styles.taskTitle}>{task.title}</Text>
+                      <View
                         style={[
-                          styles.priorityText,
-                          { color: getPriorityColor(task.priority) },
+                          styles.priorityBadge,
+                          { backgroundColor: getPriorityColor(task.priority) + "20" },
                         ]}
                       >
-                        {task.priority}
-                      </Text>
+                        <Text
+                          style={[
+                            styles.priorityText,
+                            { color: getPriorityColor(task.priority) },
+                          ]}
+                        >
+                          {task.priority}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                  <Text style={styles.taskDescription} numberOfLines={2}>
-                    {task.description}
-                  </Text>
-                  <View style={styles.taskFooter}>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        { backgroundColor: getStatusColor(task.status) + "20" },
-                      ]}
-                    >
-                      <Text
+                    <Text style={styles.taskDescription} numberOfLines={2}>
+                      {task.description}
+                    </Text>
+                    <View style={styles.taskFooter}>
+                      <View
                         style={[
-                          styles.statusText,
-                          { color: getStatusColor(task.status) },
+                          styles.statusBadge,
+                          { backgroundColor: getStatusColor(task.status) + "20" },
                         ]}
                       >
-                        {task.status}
-                      </Text>
-                    </View>
-                    <View style={styles.dueDateContainer}>
-                      <Ionicons name="calendar-outline" size={14} color={COLORS.textLight} />
-                      <Text style={styles.dueDate}>{formatDate(task.dueDate)}</Text>
+                        <Text
+                          style={[
+                            styles.statusText,
+                            { color: getStatusColor(task.status) },
+                          ]}
+                        >
+                          {task.status}
+                        </Text>
+                      </View>
+                      <View style={styles.dueDateContainer}>
+                        <Ionicons name="calendar-outline" size={14} color={COLORS.textLight} />
+                        <Text style={styles.dueDate}>{formatDate(task.dueDate)}</Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              ))
+                ))}
+              </>
             )}
           </View>
         )}
@@ -417,6 +417,106 @@ export default function GroupDetail({ groupId, onClose }: GroupDetailProps) {
           </TouchableOpacity>
         </View>
       )}
+
+      <Modal
+        visible={showMembersModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowMembersModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Group Members</Text>
+              <TouchableOpacity onPress={() => setShowMembersModal(false)}>
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView 
+              style={styles.membersList}
+              contentContainerStyle={{ paddingBottom: 20 }}
+            >
+              {!group ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={COLORS.primary} />
+                  <Text style={styles.emptySubtext}>Loading members...</Text>
+                </View>
+              ) : (
+                <>
+                  {group.leader && (
+                    <View style={styles.memberSection}>
+                      <Text style={styles.memberSectionTitle}>Group Admin</Text>
+                      <View style={styles.memberItem}>
+                        <View style={styles.memberAvatar}>
+                          <Text style={styles.memberAvatarText}>
+                            {(group.leader.firstName?.[0] || "").toUpperCase()}
+                            {(group.leader.lastName?.[0] || "").toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={styles.memberInfo}>
+                          <Text style={styles.memberName}>
+                            {group.leader.firstName || ""} {group.leader.lastName || ""}
+                          </Text>
+                          <Text style={styles.memberRole}>
+                            {group.leader.role || "No role"}
+                          </Text>
+                        </View>
+                        <View style={styles.leaderBadge}>
+                          <Ionicons name="star" size={16} color={COLORS.warning} />
+                        </View>
+                      </View>
+                    </View>
+                  )}
+
+                  <View style={styles.memberSection}>
+                    <Text style={styles.memberSectionTitle}>
+                      All Members ({group.members?.length || 0})
+                    </Text>
+                    {group.members && group.members.length > 0 ? (
+                      <>
+                        {group.members.map((member: any) => {
+                          if (!member || !member._id) return null;
+                          
+                          const isLeader = group.leader && member._id === group.leader._id;
+                          
+                          return (
+                            <View key={member._id} style={styles.memberItem}>
+                              <View style={styles.memberAvatar}>
+                                <Text style={styles.memberAvatarText}>
+                                  {(member.firstName?.[0] || "?").toUpperCase()}
+                                  {(member.lastName?.[0] || "?").toUpperCase()}
+                                </Text>
+                              </View>
+                              <View style={styles.memberInfo}>
+                                <Text style={styles.memberName}>
+                                  {member.firstName || "Unknown"} {member.lastName || ""}
+                                </Text>
+                                <Text style={styles.memberRole}>
+                                  {member.role || "No role"}
+                                </Text>
+                              </View>
+                              {isLeader && (
+                                <View style={styles.leaderBadge}>
+                                  <Ionicons name="star" size={16} color={COLORS.warning} />
+                                </View>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </>
+                    ) : (
+                      <View style={{ padding: 20, backgroundColor: COLORS.background }}>
+                        <Text style={styles.emptyText}>No members found</Text>
+                      </View>
+                    )}
+                  </View>
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -431,6 +531,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: COLORS.background,
+    padding: 20,
   },
   header: {
     flexDirection: "row",
@@ -648,5 +749,86 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: COLORS.background,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    height: "80%",
+    overflow: "hidden",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: COLORS.text,
+  },
+  membersList: {
+    flex: 1,
+    paddingTop: 8,
+  },
+  memberSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  memberSectionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.textLight,
+    marginBottom: 12,
+    marginTop: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  memberItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.white,
+  },
+  memberAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.primary,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  memberAvatarText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  memberInfo: {
+    flex: 1,
+  },
+  memberName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: COLORS.text,
+    marginBottom: 2,
+  },
+  memberRole: {
+    fontSize: 14,
+    color: COLORS.textLight,
+  },
+  leaderBadge: {
+    marginLeft: 8,
   },
 });
