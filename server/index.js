@@ -781,12 +781,15 @@ app.get("/tasks/feed", verifyToken, async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
     const user = await User.findById(req.userId);
+    
     const tasks = await Task.find({
       isOpenForClaims: true,
       isClaimed: false,
       department: user.department,
       isArchived: false,
-      status: { $nin: ["Completed", "Cancelled"] }
+      status: { $nin: ["Completed", "Cancelled"] },
+      assignedTo: { $size: 0 },
+      assignedGroups: { $size: 0 }
     })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -794,6 +797,7 @@ app.get("/tasks/feed", verifyToken, async (req, res) => {
       .populate("createdBy", "firstName lastName profilePhoto role")
       .populate("assignedTo", "firstName lastName profilePhoto")
       .populate("assignedGroups", "name");
+    
     return res.status(200).json({
       tasks,
       page,
