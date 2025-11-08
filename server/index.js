@@ -33,6 +33,26 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } 
 });
 
+// Helper function to log activity
+const logActivity = async (taskId, userId, type, description, metadata = {}) => {
+  try {
+    const task = await Task.findById(taskId);
+    if (!task) return;
+    
+    task.activityLog.push({
+      type,
+      user: userId,
+      description,
+      metadata,
+      timestamp: new Date(),
+    });
+    
+    await task.save();
+  } catch (error) {
+    console.error("Error logging activity:", error.message);
+  }
+};
+
 const uploadToCloudinary = (buffer, folder) => {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
@@ -458,7 +478,17 @@ app.post("/task/create", verifyToken, async (req, res) => {
       isOpenForClaims: isOpenForClaims || false,
       tags: tags || [],
       checklist: checklist || [],
-      progressPercentage: progressPercentage
+      progressPercentage: progressPercentage,
+      activityLog: [{
+        type: "created",
+        user: req.userId,
+        description: "Task created",
+        metadata: { 
+          status: status || "Open",
+          priority: priority || "Medium",
+        },
+        timestamp: new Date(),
+      }],
     });
     if (parentTask) {
       await Task.findByIdAndUpdate(parentTask, {
@@ -614,6 +644,10 @@ app.put("/task/:id", verifyToken, async (req, res) => {
       progressPercentage,
       tags
     } = req.body;
+    
+    // Get old task for comparison
+    const oldTask = await Task.findById(req.params.id);
+    
     const updateData = {};
     if (title) updateData.title = title;
     if (description) updateData.description = description;
@@ -625,11 +659,68 @@ app.put("/task/:id", verifyToken, async (req, res) => {
     if (tags) updateData.tags = tags;
     if (status === "Completed") {
       updateData.completedDate = new Date();
-      const task = await Task.findById(req.params.id);
-      for (const userId of task.assignedTo) {
+      for (const userId of oldTask.assignedTo) {
         await updateUserStats(userId);
       }
     }
+    
+    // Log changes
+    const activities = [];
+    
+    if (status && status !== oldTask.status) {
+      activities.push({
+        type: "status_changed",
+        user: req.userId,
+        description: `Status changed from ${oldTask.status} to ${status}`,
+        metadata: { from: oldTask.status, to: status },
+        timestamp: new Date(),
+      });
+    }
+    
+    if (priority && priority !== oldTask.priority) {
+      activities.push({
+        type: "priority_changed",
+        user: req.userId,
+        description: `Priority changed from ${oldTask.priority} to ${priority}`,
+        metadata: { from: oldTask.priority, to: priority },
+        timestamp: new Date(),
+      });
+    }
+    
+    if (title && title !== oldTask.title) {
+      activities.push({
+        type: "title_changed",
+        user: req.userId,
+        description: `Title changed from "${oldTask.title}" to "${title}"`,
+        metadata: { from: oldTask.title, to: title },
+        timestamp: new Date(),
+      });
+    }
+    
+    if (description && description !== oldTask.description) {
+      activities.push({
+        type: "description_changed",
+        user: req.userId,
+        description: "Description updated",
+        metadata: {},
+        timestamp: new Date(),
+      });
+    }
+    
+    if (dueDate && new Date(dueDate).getTime() !== new Date(oldTask.dueDate).getTime()) {
+      activities.push({
+        type: "due_date_changed",
+        user: req.userId,
+        description: `Due date changed`,
+        metadata: { from: oldTask.dueDate, to: dueDate },
+        timestamp: new Date(),
+      });
+    }
+    
+    if (activities.length > 0) {
+      updateData.$push = { activityLog: { $each: activities } };
+    }
+    
     const task = await Task.findByIdAndUpdate(
       req.params.id,
       updateData,
@@ -652,7 +743,18 @@ app.post("/task/:id/assign", verifyToken, async (req, res) => {
     const { userId } = req.body;
     const task = await Task.findByIdAndUpdate(
       req.params.id,
-      { $addToSet: { assignedTo: userId } },
+      { 
+        $addToSet: { assignedTo: userId },
+        $push: {
+          activityLog: {
+            type: "assigned",
+            user: req.userId,
+            description: "User assigned to task",
+            metadata: { assignedUser: userId },
+            timestamp: new Date(),
+          }
+        }
+      },
       { new: true }
     ).populate("assignedTo", "firstName lastName profilePhoto role");
     await Notification.create({
@@ -676,7 +778,18 @@ app.post("/task/:id/unassign", verifyToken, async (req, res) => {
     const { userId } = req.body;
     const task = await Task.findByIdAndUpdate(
       req.params.id,
-      { $pull: { assignedTo: userId } },
+      { 
+        $pull: { assignedTo: userId },
+        $push: {
+          activityLog: {
+            type: "unassigned",
+            user: req.userId,
+            description: "User unassigned from task",
+            metadata: { unassignedUser: userId },
+            timestamp: new Date(),
+          }
+        }
+      },
       { new: true }
     );
     return res.status(200).json({
@@ -1144,6 +1257,16 @@ app.post("/comment/create", verifyToken, async (req, res) => {
     const populatedComment = await Comment.findById(comment._id)
       .populate("author", "firstName lastName profilePhoto role");
     const task = await Task.findById(taskId);
+    
+    // Log comment activity
+    await logActivity(
+      taskId,
+      req.userId,
+      "comment_added",
+      "Added a comment",
+      { commentId: comment._id }
+    );
+    
     const recipients = new Set([
       task.createdBy.toString(),
       ...task.assignedTo.map(id => id.toString())
@@ -1177,6 +1300,28 @@ app.get("/comments/task/:taskId", verifyToken, async (req, res) => {
       .sort({ createdAt: -1 })
       .populate("author", "firstName lastName profilePhoto role");
     return res.status(200).json(comments);
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.get("/task/:id/activity-log", verifyToken, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id)
+      .select("activityLog")
+      .populate("activityLog.user", "firstName lastName profilePhoto role");
+    
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+    
+    // Sort by timestamp descending (newest first)
+    const sortedLog = task.activityLog.sort((a, b) => 
+      new Date(b.timestamp) - new Date(a.timestamp)
+    );
+    
+    return res.status(200).json(sortedLog);
   } catch (error) {
     console.log(error.message);
     res.status(500).json({ message: error.message });

@@ -128,6 +128,7 @@ export default function TaskDetails() {
   
   const [task, setTask] = useState<Task | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [activityLog, setActivityLog] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [newComment, setNewComment] = useState("");
@@ -149,6 +150,7 @@ export default function TaskDetails() {
   useEffect(() => {
     loadTaskDetails();
     loadComments();
+    loadActivityLog();
   }, [id]);
 
   const loadTaskDetails = async () => {
@@ -183,6 +185,18 @@ export default function TaskDetails() {
     }
   };
 
+  const loadActivityLog = async () => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      const response = await axios.get(`http://${IP}:5555/task/${id}/activity-log`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setActivityLog(response.data);
+    } catch (error) {
+      console.error("Error loading activity log:", error);
+    }
+  };
+
   const handleStatusChange = async (newStatus: string) => {
     try {
       const token = await AsyncStorage.getItem("authToken");
@@ -193,6 +207,7 @@ export default function TaskDetails() {
       );
       setTask((prev) => (prev ? { ...prev, status: newStatus } : null));
       setShowStatusModal(false);
+      loadActivityLog(); // Reload activity log
       Alert.alert("Success", "Status updated successfully");
     } catch (error) {
       console.error("Error updating status:", error);
@@ -216,6 +231,7 @@ export default function TaskDetails() {
       );
       setNewComment("");
       loadComments();
+      loadActivityLog(); // Reload activity log
       Alert.alert("Success", "Comment added successfully");
     } catch (error) {
       console.error("Error adding comment:", error);
@@ -432,6 +448,34 @@ export default function TaskDetails() {
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
     return formatDate(dateString);
+  };
+
+  const getActivityIcon = (type: string) => {
+    const icons: { [key: string]: string } = {
+      created: "add-circle-outline",
+      status_changed: "swap-horizontal-outline",
+      priority_changed: "flag-outline",
+      assigned: "person-add-outline",
+      unassigned: "person-remove-outline",
+      reassigned: "repeat-outline",
+      self_assigned: "hand-right-outline",
+      due_date_changed: "calendar-outline",
+      title_changed: "create-outline",
+      description_changed: "document-text-outline",
+      checklist_added: "checkbox-outline",
+      checklist_completed: "checkmark-circle-outline",
+      checklist_uncompleted: "close-circle-outline",
+      checklist_deleted: "trash-outline",
+      subtask_added: "git-branch-outline",
+      subtask_linked: "link-outline",
+      subtask_unlinked: "unlink-outline",
+      comment_added: "chatbubble-outline",
+      attachment_added: "attach-outline",
+      attachment_deleted: "close-outline",
+      tag_added: "pricetag-outline",
+      tag_removed: "pricetag-outline",
+    };
+    return icons[type] || "information-circle-outline";
   };
 
   if (loading) {
@@ -857,9 +901,9 @@ export default function TaskDetails() {
           )}
         </View>
 
-        {/* Comments Section */}
+        {/* Activity & Comments Section */}
         <View style={styles.commentsSection}>
-          <Text style={styles.sectionTitle}>Comments ({comments.length})</Text>
+          <Text style={styles.sectionTitle}>Activity & Comments</Text>
 
           {/* Add Comment */}
           {canEdit && (
@@ -886,32 +930,60 @@ export default function TaskDetails() {
             </View>
           )}
 
-          {/* Comments List */}
-          {comments.length === 0 ? (
+          {/* Combined Activity Log & Comments */}
+          {comments.length === 0 && activityLog.length === 0 ? (
             <View style={styles.emptyComments}>
-              <Ionicons name="chatbubbles-outline" size={48} color={COLORS.textLight} />
-              <Text style={styles.emptyCommentsText}>No comments yet</Text>
+              <Ionicons name="time-outline" size={48} color={COLORS.textLight} />
+              <Text style={styles.emptyCommentsText}>No activity yet</Text>
             </View>
           ) : (
-            comments.map((comment) => (
-              <View key={comment._id} style={styles.comment}>
-                <View style={styles.commentAvatar}>
-                  <Text style={styles.commentAvatarText}>
-                    {comment.author.firstName[0]}
-                    {comment.author.lastName[0]}
-                  </Text>
-                </View>
-                <View style={styles.commentContent}>
-                  <View style={styles.commentHeader}>
-                    <Text style={styles.commentAuthor}>
-                      {comment.author.firstName} {comment.author.lastName}
-                    </Text>
-                    <Text style={styles.commentTime}>{formatRelativeTime(comment.createdAt)}</Text>
+            <>
+              {/* Activity Log Items */}
+              {activityLog.map((activity) => (
+                <View key={activity._id} style={styles.activityItem}>
+                  <View style={styles.activityIcon}>
+                    <Ionicons 
+                      name={getActivityIcon(activity.type) as any} 
+                      size={16} 
+                      color={COLORS.primary} 
+                    />
                   </View>
-                  <Text style={styles.commentText}>{comment.content}</Text>
+                  <View style={styles.activityContent}>
+                    <Text style={styles.activityText}>
+                      <Text style={styles.activityUser}>
+                        {activity.user.firstName} {activity.user.lastName}
+                      </Text>
+                      {" "}
+                      {activity.description}
+                    </Text>
+                    <Text style={styles.activityTime}>
+                      {formatRelativeTime(activity.timestamp)}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            ))
+              ))}
+
+              {/* Comments */}
+              {comments.map((comment) => (
+                <View key={comment._id} style={styles.comment}>
+                  <View style={styles.commentAvatar}>
+                    <Text style={styles.commentAvatarText}>
+                      {comment.author.firstName[0]}
+                      {comment.author.lastName[0]}
+                    </Text>
+                  </View>
+                  <View style={styles.commentContent}>
+                    <View style={styles.commentHeader}>
+                      <Text style={styles.commentAuthor}>
+                        {comment.author.firstName} {comment.author.lastName}
+                      </Text>
+                      <Text style={styles.commentTime}>{formatRelativeTime(comment.createdAt)}</Text>
+                    </View>
+                    <Text style={styles.commentText}>{comment.content}</Text>
+                  </View>
+                </View>
+              ))}
+            </>
           )}
         </View>
       </ScrollView>
@@ -1854,5 +1926,44 @@ const styles = StyleSheet.create({
     paddingLeft: 8,
     borderLeftWidth: 2,
     borderLeftColor: COLORS.border,
+  },
+  // Activity log styles
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: COLORS.primary + '05',
+    borderRadius: 8,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.primary,
+  },
+  activityIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  activityContent: {
+    flex: 1,
+  },
+  activityText: {
+    fontSize: 14,
+    color: COLORS.text,
+    lineHeight: 20,
+  },
+  activityUser: {
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  activityTime: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginTop: 4,
   },
 });
