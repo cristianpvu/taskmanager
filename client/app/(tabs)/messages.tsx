@@ -4,12 +4,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
+import { useAuth } from "@/context/AuthContext";
 
-import { IP } from '@/data/ip'; // Import IP from your config
+import { IP } from '@/data/ip';
 
 const API_URL = `http://${IP}:5555`;
 
 export default function AdminDashboard() {
+    const router = useRouter();
+    const { user: currentUser } = useAuth();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [stats, setStats] = useState({
@@ -30,23 +35,62 @@ export default function AdminDashboard() {
     const [recentTasks, setRecentTasks] = useState([]);
     const [recentActivity, setRecentActivity] = useState([]);
     const [departmentStats, setDepartmentStats] = useState([]);
+    const [allUsers, setAllUsers] = useState([]);
 
     const fetchDashboardData = async () => {
         try {
             const token = await AsyncStorage.getItem('authToken');
             const headers = { Authorization: `Bearer ${token}` };
 
-            // Fetch all tasks
-            const tasksResponse = await axios.get(`${API_URL}/tasks/all`, { headers });
-            const allTasks = tasksResponse.data;
+            // Fetch tasks from different endpoints and combine them
+            let allTasks = [];
 
-            // Fetch all users
-            const usersResponse = await axios.get(`${API_URL}/users/all`, { headers });
-            const allUsers = usersResponse.data;
+            try {
+                // Try to get user's tasks
+                const userTasksResponse = await axios.get(`${API_URL}/tasks/user/${currentUser?._id}`, { headers });
+                allTasks = [...userTasksResponse.data];
+            } catch (error) {
+                console.log("Could not fetch user tasks");
+            }
+
+            try {
+                // Try to get created tasks
+                const createdTasksResponse = await axios.get(`${API_URL}/tasks/created-by/${currentUser?._id}`, { headers });
+                const createdTasks = createdTasksResponse.data;
+
+                // Add created tasks that aren't already in the list
+                createdTasks.forEach(task => {
+                    if (!allTasks.find(t => t._id === task._id)) {
+                        allTasks.push(task);
+                    }
+                });
+            } catch (error) {
+                console.log("Could not fetch created tasks");
+            }
+
+            try {
+                // Try to get feed tasks
+                const feedResponse = await axios.get(`${API_URL}/tasks/feed`, { headers });
+                const feedTasks = feedResponse.data.tasks || feedResponse.data;
+
+                // Add feed tasks that aren't already in the list
+                feedTasks.forEach(task => {
+                    if (!allTasks.find(t => t._id === task._id)) {
+                        allTasks.push(task);
+                    }
+                });
+            } catch (error) {
+                console.log("Could not fetch feed tasks");
+            }
 
             // Fetch all groups
             const groupsResponse = await axios.get(`${API_URL}/groups`, { headers });
             const allGroups = groupsResponse.data;
+
+            // Fetch users by searching (get all users with empty query)
+            const usersResponse = await axios.get(`${API_URL}/users/search?query=`, { headers });
+            const users = usersResponse.data;
+            setAllUsers(users);
 
             // Calculate stats
             const now = new Date();
@@ -105,7 +149,7 @@ export default function AdminDashboard() {
                 overdueTasks: tasksByStatus.overdue,
                 inProgressTasks: tasksByStatus.inProgress,
                 cancelledTasks: tasksByStatus.cancelled,
-                totalUsers: allUsers.length,
+                totalUsers: users.length,
                 totalGroups: allGroups.length,
                 criticalTasks: tasksByPriority.critical,
                 highPriorityTasks: tasksByPriority.high,
@@ -145,6 +189,13 @@ export default function AdminDashboard() {
         }
     };
 
+    // Refresh data when screen comes into focus
+    useFocusEffect(
+        useCallback(() => {
+            fetchDashboardData();
+        }, [])
+    );
+
     useEffect(() => {
         fetchDashboardData();
     }, []);
@@ -152,6 +203,11 @@ export default function AdminDashboard() {
     const onRefresh = () => {
         setRefreshing(true);
         fetchDashboardData();
+    };
+
+    // THIS IS THE KEY FUNCTION - Navigate to user profile
+    const navigateToUserProfile = (userId) => {
+        router.push(`/userprofiles?userId=${userId}` as any);5
     };
 
     const StatCard = ({ title, value, icon, color, bgColor, subtitle }) => (
@@ -168,6 +224,63 @@ export default function AdminDashboard() {
             </View>
         </View>
     );
+
+    const UserCard = ({ user }) => {
+        const getInitials = () => {
+            return `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}`.toUpperCase();
+        };
+
+        const getStatusColor = (status) => {
+            if (!status) return '#6B7280';
+            if (status.toLowerCase().includes('available')) return '#10B981';
+            if (status.toLowerCase().includes('busy')) return '#F59E0B';
+            if (status.toLowerCase().includes('away')) return '#6B7280';
+            return '#2563EB';
+        };
+
+        const getRoleIcon = (role) => {
+            switch (role) {
+                case 'CEO': return 'crown';
+                case 'Project Manager': return 'briefcase';
+                case 'Team Lead': return 'people';
+                case 'Employee': return 'person';
+                case 'Intern': return 'school';
+                case 'Contractor': return 'hammer';
+                default: return 'person';
+            }
+        };
+
+        return (
+            <TouchableOpacity
+                style={styles.userCard}
+                onPress={() => navigateToUserProfile(user._id)}
+                activeOpacity={0.7}
+            >
+                <View style={styles.userCardHeader}>
+                    <View style={styles.userAvatarContainer}>
+                        <View style={styles.userAvatar}>
+                            <Text style={styles.userAvatarText}>{getInitials()}</Text>
+                        </View>
+                        <View style={[styles.userStatusDot, { backgroundColor: getStatusColor(user.status) }]} />
+                    </View>
+                    <View style={styles.userCardInfo}>
+                        <Text style={styles.userName}>{user.firstName} {user.lastName}</Text>
+                        <View style={styles.userRoleContainer}>
+                            <Ionicons name={getRoleIcon(user.role)} size={12} color="#6B7280" />
+                            <Text style={styles.userRole}>{user.role}</Text>
+                        </View>
+                        <Text style={styles.userDepartment}>{user.department}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+                </View>
+                {user.status && (
+                    <View style={styles.userStatusContainer}>
+                        <Text style={styles.userStatusText}>{user.status}</Text>
+                    </View>
+                )}
+            </TouchableOpacity>
+        );
+    };
 
     const TaskListItem = ({ task }) => {
         const getPriorityColor = (priority) => {
@@ -429,6 +542,21 @@ export default function AdminDashboard() {
                     </View>
                 </View>
 
+                {/* All Users Section - CLICK ON ANY USER TO GO TO THEIR PROFILE */}
+                <View style={styles.section}>
+                    <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>All Users ({allUsers.length})</Text>
+                        <Text style={styles.sectionSubtitle}>Tap to view profile</Text>
+                    </View>
+                    {allUsers.length > 0 ? (
+                        allUsers.map(user => (
+                            <UserCard key={user._id} user={user} />
+                        ))
+                    ) : (
+                        <Text style={styles.emptyText}>No users found</Text>
+                    )}
+                </View>
+
                 {/* Department Statistics */}
                 {departmentStats.length > 0 && (
                     <View style={styles.section}>
@@ -579,6 +707,87 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#1F2937',
         marginBottom: 16,
+    },
+    sectionSubtitle: {
+        fontSize: 12,
+        color: '#6B7280',
+        fontStyle: 'italic',
+    },
+    userCard: {
+        backgroundColor: '#FFFFFF',
+        padding: 16,
+        borderRadius: 12,
+        marginBottom: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    userCardHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    userAvatarContainer: {
+        position: 'relative',
+    },
+    userAvatar: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: '#2563EB',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    userAvatarText: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#FFFFFF',
+    },
+    userStatusDot: {
+        position: 'absolute',
+        bottom: 2,
+        right: 2,
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        borderWidth: 2,
+        borderColor: '#FFFFFF',
+    },
+    userCardInfo: {
+        flex: 1,
+    },
+    userName: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#1F2937',
+        marginBottom: 4,
+    },
+    userRoleContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginBottom: 2,
+    },
+    userRole: {
+        fontSize: 13,
+        color: '#6B7280',
+    },
+    userDepartment: {
+        fontSize: 12,
+        color: '#9CA3AF',
+    },
+    userStatusContainer: {
+        marginTop: 8,
+        paddingTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#F3F4F6',
+    },
+    userStatusText: {
+        fontSize: 13,
+        color: '#6B7280',
+        fontStyle: 'italic',
     },
     priorityGrid: {
         flexDirection: 'row',

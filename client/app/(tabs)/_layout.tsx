@@ -1,8 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, TouchableOpacity, Text, StyleSheet, SafeAreaView, StatusBar, Platform } from "react-native";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
+import { useSocket } from "@/context/SocketContext";
+import NotificationsModal from "@/components/NotificationsModal";
 
 const COLORS = {
     primary: "#2563EB",
@@ -13,12 +15,20 @@ const COLORS = {
     border: "#E2E8F0",
 };
 
+// Roles that can access the Messages/Admin Dashboard
+const ADMIN_ROLES = ['CEO', 'Project Manager', 'Team Lead'];
+
 export default function TabsLayout() {
     const pathname = usePathname();
     const router = useRouter();
     const { user } = useAuth();
+    const { unreadCount } = useSocket();
+    const [showNotifications, setShowNotifications] = useState(false);
 
     const isActive = (path: string) => pathname === path;
+
+    // Check if user has admin access
+    const hasAdminAccess = user && ADMIN_ROLES.includes(user.role);
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -28,8 +38,18 @@ export default function TabsLayout() {
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>TaskManager</Text>
                 <View style={styles.headerRight}>
-                    <TouchableOpacity style={styles.iconButton}>
+                    <TouchableOpacity 
+                        style={styles.iconButton}
+                        onPress={() => setShowNotifications(true)}
+                    >
                         <Ionicons name="notifications-outline" size={24} color={COLORS.text} />
+                        {unreadCount > 0 && (
+                            <View style={styles.badge}>
+                                <Text style={styles.badgeText}>
+                                    {unreadCount > 99 ? "99+" : unreadCount}
+                                </Text>
+                            </View>
+                        )}
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={styles.avatar}
@@ -42,6 +62,11 @@ export default function TabsLayout() {
                     </TouchableOpacity>
                 </View>
             </View>
+            
+            <NotificationsModal 
+                visible={showNotifications}
+                onClose={() => setShowNotifications(false)}
+            />
 
             {/* Content */}
             <Tabs
@@ -98,18 +123,21 @@ export default function TabsLayout() {
                     <Text style={[styles.navText, isActive("/mytasks") && styles.navTextActive]}>My Tasks</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                    style={styles.navItem}
-                    onPress={() => router.push("/messages" as any)}
-                    activeOpacity={0.7}
-                >
-                    <Ionicons
-                        name={isActive("/messages") ? "chatbubbles" : "chatbubbles-outline"}
-                        size={24}
-                        color={isActive("/messages") ? COLORS.primary : COLORS.textLight}
-                    />
-                    <Text style={[styles.navText, isActive("/messages") && styles.navTextActive]}>Messages</Text>
-                </TouchableOpacity>
+                {/* Only show Messages tab for admin roles */}
+                {hasAdminAccess && (
+                    <TouchableOpacity
+                        style={styles.navItem}
+                        onPress={() => router.push("/messages" as any)}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons
+                            name={isActive("/messages") ? "chatbubbles" : "chatbubbles-outline"}
+                            size={24}
+                            color={isActive("/messages") ? COLORS.primary : COLORS.textLight}
+                        />
+                        <Text style={[styles.navText, isActive("/messages") && styles.navTextActive]}>Dashboard</Text>
+                    </TouchableOpacity>
+                )}
 
                 <TouchableOpacity
                     style={styles.navItem}
@@ -156,6 +184,24 @@ const styles = StyleSheet.create({
     },
     iconButton: {
         padding: 4,
+        position: "relative",
+    },
+    badge: {
+        position: "absolute",
+        top: 0,
+        right: 0,
+        backgroundColor: "#EF4444",
+        borderRadius: 10,
+        minWidth: 20,
+        height: 20,
+        justifyContent: "center",
+        alignItems: "center",
+        paddingHorizontal: 4,
+    },
+    badgeText: {
+        color: COLORS.white,
+        fontSize: 10,
+        fontWeight: "bold",
     },
     avatar: {
         width: 36,
