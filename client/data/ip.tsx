@@ -1,1 +1,0 @@
-export const IP = process.env.EXPO_PUBLIC_API_URL || "localhost";
